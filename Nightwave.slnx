@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Nightwave.Core/Nightwave.Core.csproj" />
+    <Project Path="src/Nightwave.Tuners.Dvb/Nightwave.Tuners.Dvb.csproj" />
+    <Project Path="src/Nightwave.Tuners.Iptv/Nightwave.Tuners.Iptv.csproj" />
+    <Project Path="src/Nightwave.Server/Nightwave.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nightwave.Core.Tests/Nightwave.Core.Tests.csproj" />
+    <Project Path="tests/Nightwave.Tuners.Dvb.Tests/Nightwave.Tuners.Dvb.Tests.csproj" />
+    <Project Path="tests/Nightwave.Tuners.Iptv.Tests/Nightwave.Tuners.Iptv.Tests.csproj" />
+  </Folder>
+</Solution>

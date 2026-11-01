@@ -1,0 +1,218 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet test Nightwave.slnx -c Release
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
+  picons:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: packaging/picons.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: picons
+          path: packaging/picons.zip
+          retention-days: 7
+
+  binaries:
+    needs: [test, version, picons]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest, deb: amd64, run: true }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, deb: arm64, run: true }
+          - { rid: win-x64, os: windows-latest, run: true }
+          - { rid: win-arm64, os: windows-latest }
+          - { rid: osx-arm64, os: macos-latest, run: true }
+          - { rid: osx-x64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: picons
+          path: packaging
+
+      - name: Publish
+        run: |
+          dotnet publish src/Nightwave.Server -c Release -r "${{ matrix.rid }}" --self-contained \
+            -p:Version="$VERSION" -o out/nightwave
+          cp LICENSE NOTICE packaging/picons-GPL-3.0.txt out/nightwave/
+
+      - name: Check that it starts
+        if: matrix.run
+        env:
+          NIGHTWAVE_DATA: ${{ runner.temp }}/data
+        run: |
+          cd out/nightwave
+          ./nightwaved &
+          server=$!
+          for _ in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:9985/; then
+              kill "$server"
+              exit 0
+            fi
+            sleep 1
+          done
+          kill "$server" || true
+          echo "nightwaved did not answer within 30 seconds." >&2
+          exit 1
+
+      - name: Pack the archive
+        run: |
+          mkdir dist
+          name="nightwave-$VERSION-${{ matrix.rid }}"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            (cd out && 7z a -bd "../dist/$name.zip" nightwave > /dev/null)
+          else
+            tar -C out -czf "dist/$name.tar.gz" nightwave
+          fi
+
+      - name: Build the Debian package
+        if: matrix.deb
+        run: |
+          packaging/deb.sh out/nightwave "${VERSION//-/\~}" "${{ matrix.deb }}" dist
+
+      - name: Install the Debian package
+        if: matrix.deb
+        run: |
+          sudo apt-get install -y ./dist/*.deb
+          for _ in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:9985/ && exit 0
+            sleep 1
+          done
+          systemctl status nightwaved --no-pager || true
+          sudo journalctl -u nightwaved --no-pager | tail -30
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: dist/*
+          retention-days: 14
+          compression-level: 0
+
+  docker:
+    needs: [test, version, picons]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: picons
+          path: packaging
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ needs.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [binaries, docker]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: "{linux,win,osx}-*"
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  apt:
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: debs
+          pattern: "linux-*"
+          merge-multiple: true
+      - run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Build the repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
+          packaging/apt-repo.sh "$PWD/debs" "$PWD/site"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# IDEs and OS
+.vs/
+.idea/
+*.user
+.DS_Store
+
+# Local settings, secrets and runtime state
+appsettings.*.Local.json
+.env
+.env.*
+!.env.example
+data/
+
+# Channel logos, built by packaging/picons.sh and shipped beside the binary.
+picons.zip
+
+# Media
+*.ts
+*.mkv
+*.mp4
+!**/*.d.ts

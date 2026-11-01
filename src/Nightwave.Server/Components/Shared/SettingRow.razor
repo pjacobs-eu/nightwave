@@ -1,0 +1,17 @@
+<div class="nw-row">
+    <div class="nw-row-label">@Label
+        @if (Help is not null)
+        {
+            <small>@Help</small>
+        }
+    </div>
+    <div class="nw-row-control">@ChildContent</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public string? Help { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

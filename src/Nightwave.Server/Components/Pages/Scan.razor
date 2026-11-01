@@ -1,0 +1,181 @@
+@page "/scan"
+@implements IDisposable
+@inject ScanCoordinator Scans
+@inject DialogService Dialogs
+
+<PageTitleBar Title="@T["nav.scan"]" Subtitle="@T["scan.intro"]" />
+<Note @bind-Text="_error" Tone="nw-bad" />
+
+@foreach (var (scanner, targets) in _targets)
+{
+    var status = Scans.Status(scanner.ProviderId);
+    var running = status?.State == ScanState.Running;
+
+    @if (status is not null)
+    {
+        <Section Title="@status.TargetName" Footer="@(running ? null : status.Remedy)">
+            <div class="nw-row">
+                <div class="nw-row-label">@T[$"scan.state.{status.State}"]
+                    @if (running && status.Progress is { } tuning)
+                    {
+                        <small class="nw-mono">@tuning.Current</small>
+                    }
+                </div>
+                @if (running)
+                {
+                    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.cancel"]" Click="() => Scans.Cancel(scanner.ProviderId)" />
+                }
+            </div>
+            @if (running)
+            {
+                var progress = status.Progress;
+
+                <div class="nw-row"><div class="nw-progress" style="flex:1"><i style="inline-size:@(((progress?.Fraction ?? 0) * 100).ToString("0.0", CultureInfo.InvariantCulture))%"></i></div></div>
+                @if (progress is not null)
+                {
+                    <Fact Label="@T["scan.transponders"]" Value="@($"{progress.TranspondersDone} / {progress.TransponderCount}")" />
+                    <Fact Label="@T["channels.television"]" Value="@Format.Number(progress.TelevisionFound)" />
+                    <Fact Label="@T["channels.radio"]" Value="@Format.Number(progress.RadioFound)" />
+                    <Fact Label="@T["channels.encrypted"]" Value="@Format.Number(progress.EncryptedFound)" />
+                }
+            }
+            @if (status.Result is { } result)
+            {
+                <Fact Label="@T["channels.television"]" Value="@Format.Number(result.TelevisionFound)" />
+                <Fact Label="@T["channels.radio"]" Value="@Format.Number(result.RadioFound)" />
+                <Fact Label="@T["channels.encrypted"]" Value="@Format.Number(result.EncryptedFound)" />
+                <Fact Label="@T["scan.removed"]" Value="@Format.Number(result.Removed)" />
+                @if (result.Failures.Count > 0)
+                {
+                    <button type="button" class="nw-row" @onclick="() => _showFailures = !_showFailures">
+                        <div class="nw-row-label">@T["scan.failures", result.Failures.Count]</div>
+                        <i class="rzi nw-chevron">@(_showFailures ? "expand_more" : "chevron_right")</i>
+                    </button>
+                    @if (_showFailures)
+                    {
+                        foreach (var failure in result.Failures)
+                        {
+                            <div class="nw-row nw-mono">@failure</div>
+                        }
+                    }
+                }
+            }
+            @if (status.Error is { } error)
+            {
+                <div class="nw-row"><div class="nw-row-label" style="color:var(--nw-red)">@error</div></div>
+            }
+        </Section>
+    }
+
+    <Section Title="@T["scan.targets"]">
+        @foreach (var target in targets)
+        {
+            <div class="nw-row">
+                <div class="nw-row-label">@target.Name
+                    <small>
+                        @(target.Error ?? T["scan.known", target.KnownChannels])
+                        @if (target.LastScannedAt is { } at)
+                        {
+                            <span> · @at.ToLocalTime().ToString("g")</span>
+                        }
+                    </small>
+                </div>
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["scan.start"]" Disabled="running || target.Error is not null" Click="() => StartAsync(scanner, target)" />
+            </div>
+        }
+    </Section>
+}
+
+@if (_loading)
+{
+    <Section><div class="nw-empty">@T["common.loading"]</div></Section>
+}
+else if (_targets.Sum(entry => entry.Targets.Count) == 0)
+{
+    <Section><div class="nw-empty">@T["scan.none"]</div></Section>
+}
+
+@code {
+    private readonly CancellationTokenSource _stop = new();
+    private List<(IChannelScanner Scanner, IReadOnlyList<ScanTarget> Targets)> _targets = [];
+    private bool _loading = true;
+    private bool _wasRunning;
+    private bool _showFailures;
+    private string? _error;
+
+    protected override void OnInitialized() => Scans.Changed += OnChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var targets = new List<(IChannelScanner, IReadOnlyList<ScanTarget>)>();
+
+        try
+        {
+            foreach (var scanner in Scans.Scanners)
+            {
+                var found = await scanner.GetTargetsAsync(_stop.Token);
+
+                // A kind of tuner nobody has set up has nothing to show.
+                if (found.Count > 0 || scanner.ProviderId == "satip")
+                {
+                    targets.Add((scanner, found));
+                }
+            }
+
+            _targets = targets;
+        }
+        catch (NightwaveException error)
+        {
+            _error = $"{error.Message} {error.Remedy}";
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task StartAsync(IChannelScanner scanner, ScanTarget target)
+    {
+        if (await Dialogs.OpenAsync<ScanDialog>(target.Name, null, new DialogOptions { Width = "420px" }) is ScanDialog.Choice choice)
+        {
+            var request = new ScanRequest { TargetId = target.Id, Mode = choice.Mode, IncludeEncrypted = choice.Encrypted, IncludeRadio = choice.Radio };
+
+            if (!Scans.TryStart(scanner, request, target.Name))
+            {
+                _error = T["scan.busy"];
+            }
+        }
+    }
+
+    private void OnChanged(object? sender, EventArgs args) => _ = InvokeAsync(async () =>
+    {
+        var running = Scans.Scanners.Any(scanner => Scans.Status(scanner.ProviderId)?.State == ScanState.Running);
+
+        // When a scan ends, what the rows say about known channels is out of date.
+        if (_wasRunning && !running)
+        {
+            await LoadAsync();
+        }
+
+        _wasRunning = running;
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Scans.Changed -= OnChanged;
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

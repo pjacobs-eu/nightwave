@@ -1,0 +1,20 @@
+@inject IJSRuntime Js
+@inject NotificationService Notifications
+
+<div class="nw-row nw-linkrow">
+    <span class="nw-pill">@Label</span>
+    <span class="nw-mono">@Address</span>
+    <button class="nw-iconbutton" type="button" @onclick="CopyAsync" aria-label="@T["common.copy"]"><i class="rzi">content_copy</i></button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Address { get; set; } = string.Empty;
+
+    private async Task CopyAsync()
+    {
+        await Js.InvokeVoidAsync("nightwave.copy", Address);
+        Notifications.Notify(NotificationSeverity.Success, T["common.copied"]);
+    }
+}

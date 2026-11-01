@@ -1,0 +1,22 @@
+<PageTitle>@Title · Nightwave</PageTitle>
+<header class="nw-title">
+    <div class="nw-title-text">
+        <h1>@Title</h1>
+        @if (Subtitle is not null)
+        {
+            <p>@Subtitle</p>
+        }
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="nw-title-actions">@ChildContent</div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

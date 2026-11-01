@@ -1,0 +1,117 @@
+@inject DialogService Dialogs
+
+<div class="nw-group" style="background:var(--nw-fill-2)">
+    <SettingRow Label="@T["tuners.name"]"><RadzenTextBox @bind-Value="Tuner.Name" Immediate="true" /></SettingRow>
+    <SettingRow Label="@T["tuners.enabled"]"><RadzenSwitch @bind-Value="Tuner.Enabled" /></SettingRow>
+
+    @switch (Tuner.Kind)
+    {
+        case TunerKind.SatIp:
+            <SettingRow Label="@T["tuners.satip.address"]" Help="@T["tuners.satip.addressHelp"]"><RadzenTextBox @bind-Value="Tuner.SatIp.Address" /></SettingRow>
+            <SettingRow Label="@T["tuners.satip.description"]" Help="@T["tuners.satip.descriptionHelp"]"><RadzenTextBox @bind-Value="Tuner.SatIp.DescriptionUrl" /></SettingRow>
+            <SettingRow Label="@T["tuners.satip.maxTuners"]" Help="@T["tuners.satip.maxTunersHelp"]"><RadzenNumeric @bind-Value="Tuner.SatIp.MaxTuners" Min="0" Max="64" /></SettingRow>
+            break;
+
+        case TunerKind.M3u:
+            <SettingRow Label="@T["tuners.m3u.playlist"]"><RadzenTextBox @bind-Value="Tuner.M3u.PlaylistUrl" /></SettingRow>
+            <SettingRow Label="@T["tuners.m3u.xmltv"]"><RadzenTextBox @bind-Value="Tuner.M3u.XmltvUrl" /></SettingRow>
+            <SettingRow Label="@T["tuners.maxStreams"]"><RadzenNumeric @bind-Value="Tuner.M3u.MaxStreams" Min="1" Max="1000" /></SettingRow>
+            <SettingRow Label="@T["tuners.m3u.refreshHours"]"><RadzenNumeric @bind-Value="Tuner.M3u.RefreshHours" Min="1" Max="168" /></SettingRow>
+            <SettingRow Label="@T["tuners.userAgent"]"><RadzenTextBox @bind-Value="Tuner.M3u.UserAgent" /></SettingRow>
+            break;
+
+        case TunerKind.Dvb:
+            <SettingRow Label="@T["tuners.dvb.adapter"]" Help="@CardsHelp"><RadzenNumeric @bind-Value="Tuner.Dvb.Adapter" Min="0" Max="63" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.frontend"]"><RadzenNumeric @bind-Value="Tuner.Dvb.Frontend" Min="0" Max="7" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.lnbLow"]" Help="@T["tuners.dvb.lnbHelp"]"><RadzenNumeric @bind-Value="Tuner.Dvb.LnbLowMhz" Min="0" Max="20000" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.lnbHigh"]"><RadzenNumeric @bind-Value="Tuner.Dvb.LnbHighMhz" Min="0" Max="20000" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.lnbSwitch"]"><RadzenNumeric @bind-Value="Tuner.Dvb.LnbSwitchMhz" Min="0" Max="20000" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.switch"]"><RadzenDropDown TValue="DvbSwitchKind" @bind-Value="Tuner.Dvb.Switch" Data="@Switches" TextProperty="Text" ValueProperty="Value" /></SettingRow>
+            <SettingRow Label="@T["tuners.dvb.unicable"]"><RadzenDropDown TValue="DvbUnicable" @bind-Value="Tuner.Dvb.Unicable" Data="@Unicables" TextProperty="Text" ValueProperty="Value" /></SettingRow>
+            @if (Tuner.Dvb.Unicable != DvbUnicable.None)
+            {
+                <SettingRow Label="@T["tuners.dvb.slot"]" Help="@T["tuners.dvb.slotHelp"]"><RadzenNumeric @bind-Value="Tuner.Dvb.UnicableSlot" Min="0" Max="31" /></SettingRow>
+                <SettingRow Label="@T["tuners.dvb.slotMhz"]"><RadzenNumeric @bind-Value="Tuner.Dvb.UnicableMhz" Min="950" Max="2150" /></SettingRow>
+                <SettingRow Label="@T["tuners.dvb.pin"]"><RadzenNumeric TValue="int?" @bind-Value="Tuner.Dvb.UnicablePin" Min="0" Max="255" /></SettingRow>
+            }
+            <SettingRow Label="@T["tuners.dvb.rotor"]"><RadzenDropDown TValue="DvbRotor" @bind-Value="Tuner.Dvb.Rotor" Data="@Rotors" TextProperty="Text" ValueProperty="Value" /></SettingRow>
+            @if (Tuner.Dvb.Rotor != DvbRotor.None)
+            {
+                <SettingRow Label="@T["tuners.dvb.positions"]" Help="@T["tuners.dvb.positionsHelp"]"><RadzenTextBox @bind-Value="Tuner.Dvb.RotorPositions" /></SettingRow>
+                <SettingRow Label="@T["tuners.dvb.msPerDegree"]"><RadzenNumeric @bind-Value="Tuner.Dvb.RotorMsPerDegree" Min="100" Max="5000" /></SettingRow>
+            }
+            @if (Tuner.Dvb.Rotor == DvbRotor.Usals)
+            {
+                <SettingRow Label="@T["tuners.dvb.latitude"]" Help="@T["tuners.dvb.siteHelp"]"><RadzenNumeric @bind-Value="Tuner.Dvb.SiteLatitude" Min="-90" Max="90" Step="0.1" /></SettingRow>
+                <SettingRow Label="@T["tuners.dvb.longitude"]"><RadzenNumeric @bind-Value="Tuner.Dvb.SiteLongitude" Min="-180" Max="180" Step="0.1" /></SettingRow>
+            }
+            break;
+
+        case TunerKind.HdHomeRun:
+            <SettingRow Label="@T["tuners.hdhomerun.address"]" Help="@T["tuners.hdhomerun.addressHelp"]"><RadzenTextBox @bind-Value="Tuner.HdHomeRun.Address" /></SettingRow>
+            <SettingRow Label="@T["tuners.hdhomerun.maxStreams"]"><RadzenNumeric @bind-Value="Tuner.HdHomeRun.MaxStreams" Min="0" Max="64" /></SettingRow>
+            break;
+    }
+
+    @if (Tuner.SupportsProxy)
+    {
+        <SettingRow Label="@T["tuners.proxy.enabled"]"><RadzenSwitch @bind-Value="Tuner.Proxy.Enabled" /></SettingRow>
+        @if (Tuner.Proxy.Enabled)
+        {
+            <SettingRow Label="@T["tuners.proxy.url"]" Help="http, https, socks4, socks4a, socks5"><RadzenTextBox @bind-Value="Tuner.Proxy.Url" /></SettingRow>
+            <SettingRow Label="@T["tuners.username"]"><RadzenTextBox @bind-Value="Tuner.Proxy.Username" /></SettingRow>
+            <SettingRow Label="@T["tuners.password"]"><RadzenPassword @bind-Value="Tuner.Proxy.Password" /></SettingRow>
+        }
+    }
+
+    @if (Tuner.SupportsRepair)
+    {
+        <SettingRow Label="@T["tuners.repair.label"]" Help="@T["tuners.repair.help"]"><RadzenSwitch @bind-Value="Tuner.Repair" /></SettingRow>
+    }
+</div>
+
+<div class="nw-dialog-actions">
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.cancel"]" Click="() => Dialogs.Close(null)" />
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Disabled="string.IsNullOrWhiteSpace(Tuner.Name)" Click="() => Dialogs.Close(Tuner)" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TunerConfig Tuner { get; set; } = default!;
+
+    private sealed record Choice<TValue>(TValue Value, string Text);
+
+    private List<Choice<DvbSwitchKind>> Switches =>
+    [
+        new(DvbSwitchKind.Committed, T["tuners.dvb.switch.committed"]),
+        new(DvbSwitchKind.Uncommitted, T["tuners.dvb.switch.uncommitted"]),
+        new(DvbSwitchKind.ToneBurst, T["tuners.dvb.switch.burst"]),
+        new(DvbSwitchKind.None, T["tuners.dvb.switch.none"]),
+    ];
+
+    private List<Choice<DvbUnicable>> Unicables =>
+    [
+        new(DvbUnicable.None, T["tuners.dvb.switch.none"]),
+        new(DvbUnicable.En50494, "Unicable I (EN 50494)"),
+        new(DvbUnicable.En50607, "Unicable II, JESS (EN 50607)"),
+    ];
+
+    private List<Choice<DvbRotor>> Rotors =>
+    [
+        new(DvbRotor.None, T["tuners.dvb.switch.none"]),
+        new(DvbRotor.StoredPositions, T["tuners.dvb.rotor.stored"]),
+        new(DvbRotor.Usals, "USALS"),
+    ];
+
+    /// <summary>What was found in this machine, so nobody has to go and look.</summary>
+    private string CardsHelp
+    {
+        get
+        {
+            var cards = Nightwave.Tuners.Dvb.LinuxDvb.DvbCards.Find();
+
+            return cards.Count == 0
+                ? T["tuners.dvb.none"]
+                : string.Join(" · ", cards.Select(card => $"{card.Adapter}/{card.Frontend}: {card.Name}"));
+        }
+    }
+}

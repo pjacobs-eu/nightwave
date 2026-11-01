@@ -1,0 +1,14 @@
+<Project>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!--
+      Test projects keep the compiler warnings but drop the API design rules: underscores in
+      test names are deliberate, and XML docs on test classes say nothing.
+    -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1861;CA1515</NoWarn>
+  </PropertyGroup>
+
+</Project>

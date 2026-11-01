@@ -1,0 +1,76 @@
+@page "/transponders"
+@inject LineupService Lineup
+
+<PageTitleBar Title="@T["nav.transponders"]" Subtitle="@T["transponders.intro"]" />
+
+<div class="nw-figures">
+    <Figure Label="@T["nav.transponders"]" Value="@Format.Number(_rows.Count)" />
+    <Figure Label="DVB-S" Value="@Format.Number(_rows.Count(row => row.System == "DVB-S"))" />
+    <Figure Label="DVB-S2" Value="@Format.Number(_rows.Count(row => row.System == "DVB-S2"))" />
+    <Figure Label="@T["transponders.capacity"]" Value="@($"{_rows.Sum(row => row.Capacity ?? 0) / 1000:0.00}")" Unit="Gbit/s" />
+</div>
+
+<RadzenDataGrid Data="@_rows" TItem="Row" AllowVirtualization="true" Style="block-size:calc(100vh - 290px);min-block-size:320px" AllowSorting="true" Density="Density.Compact">
+    <Columns>
+        <RadzenDataGridColumn TItem="Row" Property="Source" Title="@T["facts.position"]" Width="80px" />
+        <RadzenDataGridColumn TItem="Row" Property="Frequency" Title="MHz" Width="96px" TextAlign="TextAlign.End" FormatString="{0:0.###}" />
+        <RadzenDataGridColumn TItem="Row" Property="Polarisation" Title="Pol" Width="50px" />
+        <RadzenDataGridColumn TItem="Row" Property="SymbolRate" Title="kS/s" Width="80px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="System" Title="@T["facts.system"]" Width="80px" />
+        <RadzenDataGridColumn TItem="Row" Property="Modulation" Title="@T["facts.modulation"]" Width="90px" />
+        <RadzenDataGridColumn TItem="Row" Property="Fec" Title="FEC" Width="60px" />
+        <RadzenDataGridColumn TItem="Row" Property="RollOff" Title="@T["facts.rollOff"]" Width="80px" />
+        <RadzenDataGridColumn TItem="Row" Property="Capacity" Title="Mbit/s" Width="80px" TextAlign="TextAlign.End" FormatString="{0:0.0}" />
+        <RadzenDataGridColumn TItem="Row" Property="RequiredEsN0" Title="Es/N0 min" Width="90px" TextAlign="TextAlign.End">
+            <Template Context="row">@(row.RequiredEsN0 is { } value ? $"{value:0.00} dB" : "–")</Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Row" Property="Onid" Title="ONID" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Tsid" Title="TSID" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Television" Title="TV" Width="60px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Radio" Title="Radio" Width="60px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Scrambled" Title="CA" Width="60px" TextAlign="TextAlign.End" />
+    </Columns>
+</RadzenDataGrid>
+
+<p class="nw-section-foot">@T["facts.normNote"]</p>
+
+@code {
+    private List<Row> _rows = [];
+
+    public sealed record Row(string Source, double? Frequency, string? Polarisation, int? SymbolRate, string? System, string? Modulation, string? Fec, string? RollOff, double? Capacity, double? RequiredEsN0, int Onid, int Tsid, int Television, int Radio, int Scrambled);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var channels = await Lineup.ChannelsAsync();
+
+        _rows =
+        [
+            .. channels
+                .Where(channel => channel.Broadcast is not null)
+                .GroupBy(channel => channel.Broadcast!.Transponder)
+                .Select(group =>
+                {
+                    var facts = group.First().Broadcast!;
+
+                    return new Row(
+                        facts.Source,
+                        facts.FrequencyMhz,
+                        facts.Polarization,
+                        facts.SymbolRate,
+                        facts.System,
+                        facts.Modulation?.ToUpperInvariant(),
+                        CarrierCapacity.FecName(facts.Fec),
+                        facts.RollOff,
+                        CarrierCapacity.UsefulBitRate(facts.System, facts.SymbolRate, facts.Modulation, facts.Fec),
+                        CarrierCapacity.RequiredEsN0(facts.System, facts.Modulation, facts.Fec),
+                        facts.NetworkId,
+                        facts.TransportStreamId,
+                        group.Count(channel => channel.Kind == ChannelKind.Television),
+                        group.Count(channel => channel.Kind == ChannelKind.Radio),
+                        group.Count(channel => channel.IsEncrypted));
+                })
+                .OrderBy(row => row.Source)
+                .ThenBy(row => row.Frequency),
+        ];
+    }
+}

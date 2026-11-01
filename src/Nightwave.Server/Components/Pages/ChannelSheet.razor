@@ -1,0 +1,53 @@
+@inject DialogService Dialogs
+@inject ConfigStore Config
+@inject NavigationManager Navigation
+
+<div class="nw-toolbar" style="justify-content:flex-end">
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Icon="monitoring" Text="@T["channels.measure"]" Click="() => Dialogs.CloseSide(true)" />
+</div>
+
+<ChannelLogoEditor Channel="Channel" />
+
+@if (Channel.Broadcast is { } facts)
+{
+    <Section Title="@T["streams.service"]">
+        <Fact Label="@T["facts.provider"]" Value="@facts.ServiceProvider" />
+        <Fact Label="@T["facts.serviceType"]" Value="@DvbNames.ServiceType(facts.ServiceType)" />
+        <Fact Label="ONID" Value="@facts.NetworkId.ToString(CultureInfo.InvariantCulture)" />
+        <Fact Label="TSID" Value="@facts.TransportStreamId.ToString(CultureInfo.InvariantCulture)" />
+        <Fact Label="SID" Value="@facts.ServiceId.ToString(CultureInfo.InvariantCulture)" />
+        <Fact Label="PMT PID" Value="@Format.Pid(facts.PmtPid)" />
+        <Fact Label="PCR PID" Value="@Format.Pid(facts.PcrPid)" />
+        <Fact Label="PIDs" Value="@string.Join(", ", facts.Pids)" />
+        <Fact Label="@T["facts.caSystems"]" Value="@Format.CaSystems(facts.CaSystems)" Absent="@T["facts.freeToAir"]" />
+        @if (facts.EcmPids.Count > 0)
+        {
+            <Fact Label="ECM PIDs" Value="@string.Join(", ", facts.EcmPids.Select(Format.Pid))" />
+        }
+    </Section>
+
+    <Section Title="@T["streams.transponder"]" Footer="@T["facts.normNote"]">
+        <Fact Label="@T["facts.position"]" Value="@facts.Source" />
+        <Fact Label="@T["facts.system"]" Value="@facts.System" />
+        <Fact Label="@T["facts.frequency"]" Value="@(facts.FrequencyMhz is { } mhz ? $"{mhz:0.###} MHz" : null)" />
+        <Fact Label="@T["facts.polarisation"]" Value="@Format.Polarisation(facts.Polarization, T)" />
+        <Fact Label="@T["facts.symbolRate"]" Value="@(facts.SymbolRate is { } symbols ? $"{symbols:N0} kS/s" : null)" />
+        <Fact Label="@T["facts.modulation"]" Value="@Format.Modulation(facts.Modulation)" />
+        <Fact Label="FEC" Value="@CarrierCapacity.FecName(facts.Fec)" />
+        <Fact Label="@T["facts.rollOff"]" Value="@facts.RollOff" />
+        <Fact Label="@T["facts.pilots"]" Value="@(facts.Pilots is { } pilots ? T[pilots ? "common.on" : "common.off"] : null)" />
+        <Fact Label="@T["facts.capacity"]" Value="@(CarrierCapacity.UsefulBitRate(facts.System, facts.SymbolRate, facts.Modulation, facts.Fec) is { } capacity ? $"{capacity:0.0} Mbit/s" : null)" />
+        <Fact Label="@T["facts.requiredEsN0"]" Value="@(CarrierCapacity.RequiredEsN0(facts.System, facts.Modulation, facts.Fec) is { } esn0 ? $"{esn0:0.00} dB" : null)" />
+    </Section>
+}
+else
+{
+    <Section Title="@T["streams.service"]">
+        <Fact Label="@T["facts.tunerKind"]" Value="@T[$"provider.{Channel.ProviderId}"]" />
+        <Fact Label="@T["channels.guideId"]" Value="@Channel.GuideId" Mono="true" />
+    </Section>
+}
+
+@code {
+    [Parameter, EditorRequired] public TvChannel Channel { get; set; } = default!;
+}

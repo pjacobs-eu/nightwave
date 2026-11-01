@@ -1,0 +1,14 @@
+<a class="nw-row" href="streams/@Session.Id">
+    <span class="nw-dot @(Signal is { Locked: false } ? "nw-bad" : "nw-good")"></span>
+    <div class="nw-row-label">@Session.ChannelName
+        <small>@(Session.StopMeasurement is null ? Session.Client : T["streams.measurement"]) · @Format.Duration(DateTimeOffset.UtcNow - Session.StartedAt)</small>
+    </div>
+    <div class="nw-row-value">@($"{Session.History.LastOrDefault()?.BitRateMbps ?? 0:0.00}") Mbit/s</div>
+    <i class="rzi nw-chevron">chevron_right</i>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public StreamSession Session { get; set; } = default!;
+
+    private SignalReading? Signal => Session.Telemetry?.Signal;
+}

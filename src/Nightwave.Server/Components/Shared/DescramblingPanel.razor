@@ -1,0 +1,29 @@
+<Section Title="@T["streams.descrambling"]">
+    <Fact Label="@T["descrambler.state"]" Value="@T[$"descrambler.state.{Reading.State}"]" Tone="@Tone(Reading.State)" />
+    @if (Reading.Problem is { } problem)
+    {
+        <Fact Label="@T["descrambler.problem"]" Value="@problem" Tone="nw-bad" />
+    }
+    <Fact Label="@T["descrambler.caid"]" Value="@(Reading.CaId is { } caid ? DvbNames.CaSystemWithId(caid) : null)" />
+    <Fact Label="@T["descrambler.system"]" Value="@Reading.CardSystem" />
+    <Fact Label="@T["descrambler.provider"]" Value="@(Reading.ProviderId is { } provider ? $"{provider:X6}" : null)" />
+    <Fact Label="@T["descrambler.ecmPid"]" Value="@(Reading.EcmPid is { } pid ? Format.Pid(pid) : null)" />
+    <Fact Label="@T["descrambler.reader"]" Value="@Reading.Reader" />
+    <Fact Label="@T["descrambler.source"]" Value="@Reading.Source" />
+    <Fact Label="@T["descrambler.protocol"]" Value="@Reading.Protocol" />
+    <Fact Label="@T["descrambler.hops"]" Value="@(Reading.Hops is { } hops ? hops == 0 ? T["descrambler.hopsLocal"] : hops.ToString(CultureInfo.InvariantCulture) : null)" />
+    <Fact Label="@T["descrambler.algorithm"]" Value="@Reading.Algorithm" />
+    <Fact Label="@T["descrambler.server"]" Value="@(Reading.ServerVersion is { Length: > 0 } version ? $"{Reading.Server} · {version}" : Reading.Server)" />
+    <Fact Label="@T["descrambler.connection"]" Value="@T[Reading.Connected ? "descrambler.connected" : "descrambler.disconnected"]" Tone="@(Reading.Connected ? null : "nw-bad")" />
+</Section>
+
+@code {
+    [Parameter, EditorRequired] public DescramblingReading Reading { get; set; } = default!;
+
+    public static string? Tone(DescramblingState state) => state switch
+    {
+        DescramblingState.Active => "nw-good",
+        DescramblingState.WaitingForKeys => "nw-warn",
+        _ => "nw-bad",
+    };
+}

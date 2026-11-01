@@ -1,0 +1,365 @@
+@page "/bouquets"
+@inject BouquetStore Store
+@inject LineupService Lineup
+@inject ConfigStore Config
+@inject DialogService Dialogs
+@inject NotificationService Notifications
+@inject NavigationManager Navigation
+
+<PageTitleBar Title="@T["nav.bouquets"]" Subtitle="@T["bouquets.intro"]" />
+<Note @bind-Text="_error" Tone="nw-bad" />
+
+<div class="nw-editor">
+    <Section Title="@T["bouquets.list"]" Plain="true">
+        <div class="nw-group">
+            @if (Store.All.Count == 0)
+            {
+                <div class="nw-empty">@T["bouquets.none"]</div>
+            }
+            @for (var i = 0; i < Store.All.Count; i++)
+            {
+                var index = i;
+                var entry = Store.All[index];
+
+                <div class="nw-bouquet @(entry.Id == _selected?.Id ? "active" : null)">
+                    <button type="button" @onclick="() => ChooseAsync(entry)"><span>@entry.Name</span><span>@entry.Channels.Count</span></button>
+                    <button class="nw-iconbutton" type="button" disabled="@(index == 0)" aria-label="@T["bouquets.moveUp", entry.Name]" @onclick="() => MoveBouquetAsync(index, -1)"><i class="rzi">keyboard_arrow_up</i></button>
+                    <button class="nw-iconbutton" type="button" disabled="@(index == Store.All.Count - 1)" aria-label="@T["bouquets.moveDown", entry.Name]" @onclick="() => MoveBouquetAsync(index, 1)"><i class="rzi">keyboard_arrow_down</i></button>
+                </div>
+            }
+        </div>
+        <div style="margin-block-start:10px">
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Icon="add" Text="@T["bouquets.create"]" Click="CreateAsync" />
+        </div>
+    </Section>
+
+    @if (_selected is { } selected)
+    {
+        <div style="min-inline-size:0">
+            <div class="nw-toolbar">
+                <h2 style="margin:0;font:600 20px/1.2 var(--nw-font-display);letter-spacing:-.018em;flex:1;overflow-wrap:anywhere">@selected.Name</h2>
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["bouquets.rename"]" Click="RenameAsync" />
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Danger" Text="@T["common.delete"]" Click="DeleteAsync" />
+            </div>
+
+            <Section Title="@T["bouquets.outputs"]" Footer="@T["bouquets.tokenHelp"]">
+                <OutputLink Label="M3U" Address="@Links.Playlist(selected.Id).ToString()" />
+                <OutputLink Label="XMLTV" Address="@Links.Guide(selected.Id).ToString()" />
+                <div class="nw-row">
+                    <div class="nw-row-label">Token <small class="nw-mono">@selected.Token</small></div>
+                    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["bouquets.tokenNew"]" Click="NewTokenAsync" />
+                </div>
+            </Section>
+
+            <div class="nw-picker">
+                <Section Title="@T["bouquets.available"]" Plain="true">
+                    <div class="nw-toolbar">
+                        <div class="nw-grow"><RadzenTextBox @bind-Value="_search" Immediate="true" Placeholder="@T["bouquets.search"]" Style="inline-size:100%" aria-label="@T["bouquets.search"]" /></div>
+                        <div class="nw-segmented" role="group">
+                            <button type="button" class="@(_kind == "all" ? "active" : null)" @onclick='() => _kind = "all"'>@T["bouquets.filter.all"]</button>
+                            <button type="button" class="@(_kind == "tv" ? "active" : null)" @onclick='() => _kind = "tv"'>TV</button>
+                            <button type="button" class="@(_kind == "radio" ? "active" : null)" @onclick='() => _kind = "radio"'>Radio</button>
+                        </div>
+                        <div class="nw-segmented" role="group">
+                            <button type="button" class="@(_encryption == "all" ? "active" : null)" @onclick='() => _encryption = "all"'>@T["bouquets.filter.all"]</button>
+                            <button type="button" class="@(_encryption == "free" ? "active" : null)" @onclick='() => _encryption = "free"'>FTA</button>
+                            <button type="button" class="@(_encryption == "encrypted" ? "active" : null)" @onclick='() => _encryption = "encrypted"'>CA</button>
+                        </div>
+                    </div>
+                    <div class="nw-group">
+                        <div class="nw-list">
+                            <Virtualize Items="Filtered" ItemSize="46" Context="channel">
+                                @{
+                                    var key = KeyOf(channel);
+                                    var already = _inDraft.Contains(key);
+                                }
+                                <div class="nw-channel">
+                                    <input class="nw-check" type="checkbox" checked="@(already || _ticked.Contains(key))" disabled="@already" aria-label="@T["bouquets.select", channel.Name]" @onchange="args => Tick(key, args.Value is true)" />
+                                    <ChannelLine Channel="channel" Logo="@LogoOf(key)" />
+                                    <button class="nw-iconbutton" type="button" disabled="@already" aria-label="@T["bouquets.addOne", channel.Name]" @onclick="() => Add([channel])"><i class="rzi">add_circle</i></button>
+                                </div>
+                            </Virtualize>
+                            @if (Filtered.Count == 0)
+                            {
+                                <div class="nw-empty">@T["bouquets.noMatch"]</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="nw-toolbar" style="margin-block:10px 0">
+                        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["bouquets.addSelected", Chosen.Count]" Disabled="Chosen.Count == 0" Click="() => Add(Chosen)" />
+                        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["bouquets.addAllShown", Addable.Count]" Disabled="Addable.Count == 0" Click="() => Add(Addable)" />
+                    </div>
+                </Section>
+
+                <Section Title="@T["bouquets.inBouquet", _draft.Count]" Plain="true" Footer="@T["bouquets.numbering"]">
+                    @if (Missing > 0)
+                    {
+                        <div class="nw-toolbar">
+                            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["bouquets.removeMissing", Missing]" Click="RemoveMissing" />
+                        </div>
+                    }
+                    <div class="nw-group">
+                        <div class="nw-list">
+                            <Virtualize Items="_rows" ItemSize="46" Context="row">
+                                @{
+                                    var key = row.Key;
+                                    var known = _known.GetValueOrDefault(key);
+                                    var position = row.Index;
+                                }
+                                <div class="nw-channel @(_over == position ? "nw-over" : null)" draggable="true"
+                                     @ondragstart="() => _dragging = position"
+                                     @ondragover:preventDefault="true"
+                                     @ondragover="() => _over = position"
+                                     @ondrop:preventDefault="true"
+                                     @ondrop="() => Drop(position)"
+                                     @ondragend="() => { _dragging = -1; _over = -1; }">
+                                    <i class="rzi nw-grip">drag_indicator</i>
+                                    <span class="nw-number">@(position + 1)</span>
+                                    @if (known is not null)
+                                    {
+                                        <ChannelLine Channel="known" Logo="@LogoOf(key)" />
+                                    }
+                                    else
+                                    {
+                                        <span class="nw-logo-blank"></span>
+                                        <div class="nw-channel-text"><b style="color:var(--nw-orange)">@T["bouquets.missing"]</b><small>@key.ProviderId · @key.ChannelId</small></div>
+                                    }
+                                    <button class="nw-iconbutton" type="button" disabled="@(position == 0)" aria-label="@T["bouquets.moveUp", known?.Name ?? key.ChannelId]" @onclick="() => Move(position, position - 1)"><i class="rzi">keyboard_arrow_up</i></button>
+                                    <button class="nw-iconbutton" type="button" disabled="@(position == _draft.Count - 1)" aria-label="@T["bouquets.moveDown", known?.Name ?? key.ChannelId]" @onclick="() => Move(position, position + 1)"><i class="rzi">keyboard_arrow_down</i></button>
+                                    <button class="nw-iconbutton nw-danger" type="button" aria-label="@T["bouquets.removeOne", known?.Name ?? key.ChannelId]" @onclick="() => Remove(position)"><i class="rzi">remove_circle</i></button>
+                                </div>
+                            </Virtualize>
+                            @if (_draft.Count == 0)
+                            {
+                                <div class="nw-empty">@T["bouquets.empty"]</div>
+                            }
+                        </div>
+                    </div>
+                </Section>
+            </div>
+
+            <div class="nw-savebar">
+                <div aria-live="polite">
+                    @if (Dirty)
+                    {
+                        <span class="nw-pill nw-warn">@T["bouquets.unsaved"]</span>
+                    }
+                    else
+                    {
+                        @T["bouquets.saved"]
+                    }
+                </div>
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["bouquets.discard"]" Disabled="!Dirty" Click="Discard" />
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Disabled="!Dirty" Click="SaveAsync" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private Bouquet? _selected;
+    private List<TvChannel> _channels = [];
+    private Dictionary<ChannelKey, TvChannel> _known = [];
+    private List<ChannelKey> _draft = [];
+    private List<Row> _rows = [];
+    private HashSet<ChannelKey> _inDraft = [];
+    private readonly HashSet<ChannelKey> _ticked = [];
+    private string _search = string.Empty;
+    private string _kind = "all";
+    private string _encryption = "all";
+    private int _dragging = -1;
+    private int _over = -1;
+    private string? _error;
+    private List<TvChannel> _filtered = [];
+    private (string, string, string, int) _filteredFor;
+
+    private sealed record Row(int Index, ChannelKey Key);
+
+    private OutputLinks Links => new(new Uri(string.IsNullOrWhiteSpace(Config.Current.Output.PublicUrl) ? Navigation.BaseUri : Config.Current.Output.PublicUrl.TrimEnd('/') + "/"), _selected?.Token);
+
+    private bool Dirty => _selected is not null && !_draft.SequenceEqual(_selected.Channels);
+
+    private int Missing => _draft.Count(key => !_known.ContainsKey(key));
+
+    /// <summary>Worked out again only when the filter changes: a web tuner can have tens of thousands of channels.</summary>
+    private List<TvChannel> Filtered
+    {
+        get
+        {
+            var filter = (_search, _kind, _encryption, _channels.Count);
+
+            if (filter != _filteredFor)
+            {
+                _filteredFor = filter;
+                _filtered =
+                [
+                    .. _channels.Where(channel =>
+                        (_kind == "all" || (_kind == "radio") == (channel.Kind == ChannelKind.Radio))
+                        && (_encryption == "all" || (_encryption == "encrypted") == channel.IsEncrypted)
+                        && (_search.Length == 0
+                            || channel.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase)
+                            || channel.Number?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true
+                            || channel.GuideId?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true)),
+                ];
+            }
+
+            return _filtered;
+        }
+    }
+
+    private List<TvChannel> Addable => [.. Filtered.Where(channel => !_inDraft.Contains(KeyOf(channel)))];
+
+    private List<TvChannel> Chosen => [.. Addable.Where(channel => _ticked.Contains(KeyOf(channel)))];
+
+    private static ChannelKey KeyOf(TvChannel channel) => new(channel.ProviderId, channel.Id);
+
+    private string? LogoOf(ChannelKey key) =>
+        Lineup.ServesLogo(key) ? Links.Logo(key).ToString()
+        : _known.GetValueOrDefault(key)?.Logo?.ToString();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _channels = [.. (await Lineup.ChannelsAsync()).OrderBy(channel => char.IsLetterOrDigit(channel.Name.FirstOrDefault()) ? 0 : 1).ThenBy(channel => channel.Name, StringComparer.CurrentCultureIgnoreCase)];
+        _known = _channels.GroupBy(KeyOf).ToDictionary(group => group.Key, group => group.First());
+
+        if (Store.All.Count > 0)
+        {
+            Select(Store.All[0]);
+        }
+    }
+
+    private void Select(Bouquet bouquet)
+    {
+        _selected = bouquet;
+        SetDraft([.. bouquet.Channels]);
+    }
+
+    private void SetDraft(List<ChannelKey> draft)
+    {
+        _draft = draft;
+        _rows = [.. draft.Select((key, index) => new Row(index, key))];
+        _inDraft = [.. draft];
+    }
+
+    private void Tick(ChannelKey key, bool on)
+    {
+        if (on)
+        {
+            _ticked.Add(key);
+        }
+        else
+        {
+            _ticked.Remove(key);
+        }
+    }
+
+    private void Add(IEnumerable<TvChannel> channels)
+    {
+        SetDraft([.. _draft, .. channels.Select(KeyOf)]);
+        _ticked.Clear();
+    }
+
+    private void Move(int from, int to)
+    {
+        if (from >= 0 && to >= 0 && to < _draft.Count && from != to)
+        {
+            var next = new List<ChannelKey>(_draft);
+            var key = next[from];
+
+            next.RemoveAt(from);
+            next.Insert(to, key);
+            SetDraft(next);
+        }
+    }
+
+    private void Drop(int position)
+    {
+        Move(_dragging, position);
+        _dragging = -1;
+        _over = -1;
+    }
+
+    private void Remove(int position) => SetDraft([.. _draft.Where((_, index) => index != position)]);
+
+    private void RemoveMissing() => SetDraft([.. _draft.Where(_known.ContainsKey)]);
+
+    private void Discard() => SetDraft([.. _selected!.Channels]);
+
+    private async Task SaveAsync()
+    {
+        await Store.SetChannelsAsync(_selected!.Id, _draft);
+        _selected = Store.Find(_selected.Id);
+        Notifications.Notify(NotificationSeverity.Success, T["bouquets.saved"]);
+    }
+
+    private async Task ChooseAsync(Bouquet bouquet)
+    {
+        if (bouquet.Id == _selected?.Id)
+        {
+            return;
+        }
+
+        if (!Dirty || await ConfirmDialog.AskAsync(Dialogs, T["bouquets.discardTitle"], T["bouquets.discardBody"], T["bouquets.discard"]))
+        {
+            Select(bouquet);
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await AskNameAsync(T["bouquets.createTitle"], string.Empty) is { } name)
+        {
+            var created = await Store.CreateAsync(name);
+
+            if (!Dirty)
+            {
+                Select(created);
+            }
+        }
+    }
+
+    private async Task RenameAsync()
+    {
+        if (await AskNameAsync(T["bouquets.renameTitle"], _selected!.Name) is { } name)
+        {
+            await Store.RenameAsync(_selected.Id, name);
+            _selected = Store.Find(_selected.Id);
+        }
+    }
+
+    private async Task NewTokenAsync()
+    {
+        if (await ConfirmDialog.AskAsync(Dialogs, T["bouquets.tokenNew"], T["bouquets.tokenNewBody"], T["bouquets.tokenNew"]))
+        {
+            await Store.NewTokenAsync(_selected!.Id);
+            _selected = Store.Find(_selected.Id);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await ConfirmDialog.AskAsync(Dialogs, T["bouquets.deleteTitle", _selected!.Name], T["bouquets.deleteBody"], T["common.delete"]))
+        {
+            await Store.DeleteAsync(_selected.Id);
+            _selected = null;
+
+            if (Store.All.Count > 0)
+            {
+                Select(Store.All[0]);
+            }
+        }
+    }
+
+    private async Task MoveBouquetAsync(int index, int by)
+    {
+        var order = Store.All.Select(bouquet => bouquet.Id).ToList();
+        var id = order[index];
+
+        order.RemoveAt(index);
+        order.Insert(index + by, id);
+        await Store.ReorderAsync(order);
+    }
+
+    private async Task<string?> AskNameAsync(string title, string value) =>
+        await Dialogs.OpenAsync<NameDialog>(title, new Dictionary<string, object?> { [nameof(NameDialog.Value)] = value }, new DialogOptions { Width = "360px" }) as string;
+}

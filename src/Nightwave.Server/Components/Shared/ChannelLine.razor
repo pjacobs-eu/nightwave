@@ -1,0 +1,28 @@
+@* Logo, name and what kind of channel it is. *@
+@if (Logo is not null)
+{
+    <img class="nw-logo" src="@Logo" alt="" loading="lazy" />
+}
+else
+{
+    <span class="nw-logo-blank"></span>
+}
+<div class="nw-channel-text">
+    <b>@Channel.Name
+        @if (Channel.Kind == ChannelKind.Radio)
+        {
+            <i class="rzi nw-glyph" title="@T["channels.radio"]">radio</i>
+        }
+        @if (Channel.IsEncrypted)
+        {
+            <i class="rzi nw-glyph" title="@T["channels.encrypted"]">lock</i>
+        }
+    </b>
+    <small>@(Channel.Broadcast is { } facts ? $"{facts.Source} · {facts.FrequencyMhz:0.##} {facts.Polarization} · {facts.ServiceProvider}" : T[$"provider.{Channel.ProviderId}"])</small>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TvChannel Channel { get; set; } = default!;
+
+    [Parameter] public string? Logo { get; set; }
+}

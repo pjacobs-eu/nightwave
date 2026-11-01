@@ -1,0 +1,23 @@
+<div class="nw-row">
+    <div class="nw-row-label" style="flex:0 0 96px">@Label</div>
+    <div class="nw-row-control" style="flex:1 1 auto">
+        <div class="nw-meter" style="inline-size:100%">
+            <div class="nw-meter-bar"><i class="@Tone" style="inline-size:@((Math.Clamp(Fraction ?? 0, 0, 1) * 100).ToString("0.0", CultureInfo.InvariantCulture))%"></i></div>
+            <div class="nw-meter-value">@(Fraction is { } value ? $"{value:P0}" : "–")</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public double? Fraction { get; set; }
+
+    /// <summary>Good from here up.</summary>
+    [Parameter] public double Good { get; set; } = .6;
+
+    /// <summary>A warning from here up, a problem below.</summary>
+    [Parameter] public double Weak { get; set; } = .33;
+
+    private string? Tone => Fraction is { } value ? value >= Good ? null : value >= Weak ? "nw-warn" : "nw-bad" : null;
+}

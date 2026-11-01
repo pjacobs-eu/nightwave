@@ -1,0 +1,197 @@
+@page "/settings"
+@inject ConfigStore Config
+@inject NightwaveDatabase Database
+@inject BouquetStore Bouquets
+@inject IEnumerable<IGuideProvider> Guides
+@inject DialogService Dialogs
+@inject NotificationService Notifications
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+
+<PageTitleBar Title="@T["nav.settings"]" />
+
+<div class="nw-cards">
+    <Section Title="@T["settings.appearance"]">
+        <div class="nw-row">
+            <div class="nw-row-label">@T["settings.appearance.mode"]</div>
+            <div class="nw-segmented" role="group">
+                @foreach (var mode in new[] { "system", "light", "dark" })
+                {
+                    <button type="button" class="@(_theme == mode ? "active" : null)" @onclick="() => SetThemeAsync(mode)">@T[$"settings.appearance.{mode}"]</button>
+                }
+            </div>
+        </div>
+        <div class="nw-row">
+            <div class="nw-row-label">@T["settings.appearance.language"]</div>
+            <div class="nw-segmented" role="group">
+                <button type="button" class="@(Config.Current.Language is null ? "active" : null)" @onclick="() => SetLanguageAsync(null)">@T["settings.appearance.languageAuto"]</button>
+                @foreach (var language in Texts.Languages)
+                {
+                    <button type="button" lang="@language" class="@(Config.Current.Language == language ? "active" : null)" @onclick="() => SetLanguageAsync(language)">@CultureInfo.GetCultureInfo(language).NativeName</button>
+                }
+            </div>
+        </div>
+    </Section>
+
+    <Section Title="@T["settings.database"]">
+        <Fact Label="@T["settings.database.onDisk"]" Value="@($"{Database.SizeInBytes / 1048576d:0.0} MB")" />
+        <div class="nw-row">
+            <div class="nw-row-label">@T["settings.database.clear"]<small>@T["settings.database.clearHelp"]</small></div>
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["settings.database.clear"]" Click="ClearCacheAsync" />
+        </div>
+        <div class="nw-row">
+            <div class="nw-row-label">@T["settings.database.reset"]<small>@T["settings.database.resetHelp"]</small></div>
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Danger" Text="@T["settings.database.resetShort"]" Click="ResetAsync" />
+        </div>
+    </Section>
+</div>
+
+<div class="nw-cards">
+    <Section Title="@T["settings.guide"]">
+        <SettingRow Label="@T["settings.guide.broadcast"]"><RadzenSwitch @bind-Value="_guide.BroadcastEnabled" /></SettingRow>
+        <SettingRow Label="@T["settings.guide.interval"]"><RadzenNumeric @bind-Value="_guide.IntervalHours" Min="1" Max="168" /></SettingRow>
+        <SettingRow Label="@T["settings.guide.maxTuners"]" Help="@T["settings.guide.maxTunersHelp"]"><RadzenNumeric @bind-Value="_guide.MaxTuners" Min="0" Max="8" /></SettingRow>
+        <SettingRow Label="@T["settings.guide.languages"]" Help="@T["settings.guide.languagesHelp"]"><RadzenTextBox @bind-Value="_guide.Languages" /></SettingRow>
+        <SettingRow Label="@T["settings.guide.days"]"><RadzenNumeric @bind-Value="_guide.DaysAhead" Min="1" Max="14" /></SettingRow>
+        <div class="nw-row nw-row-end">
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["settings.guide.refresh"]" Click="RefreshGuideAsync" />
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Click="SaveGuideAsync" />
+        </div>
+    </Section>
+
+    <Section Title="@T["settings.output"]">
+        <SettingRow Label="@T["settings.discover"]"><RadzenSwitch @bind-Value="_discover" /></SettingRow>
+        <SettingRow Label="@T["settings.publicUrl"]" Help="@T["settings.publicUrlHelp"]"><RadzenTextBox @bind-Value="_publicUrl" /></SettingRow>
+        <div class="nw-row nw-row-end">
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Click="SaveOutputAsync" />
+        </div>
+    </Section>
+</div>
+
+<Section Title="@T["settings.hdhomerun"]" Footer="@T["settings.hdhomerun.note"]">
+    <SettingRow Label="@T["settings.hdhomerun.bouquet"]" Help="@T["settings.hdhomerun.bouquetHelp"]">
+        <RadzenDropDown TValue="Guid?" @bind-Value="_emulated" Data="@EmulationChoices" TextProperty="Text" ValueProperty="Id" />
+    </SettingRow>
+    <SettingRow Label="@T["settings.hdhomerun.tuners"]" Help="@T["settings.hdhomerun.tunersHelp"]"><RadzenNumeric @bind-Value="_emulatedTuners" Min="1" Max="32" /></SettingRow>
+    <div class="nw-row nw-row-end">
+        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Click="SaveEmulationAsync" />
+    </div>
+</Section>
+
+<Section Title="@T["settings.licenses"]" Footer="@T["settings.licensesBody"]" Class="nw-facts-3">
+    <Fact Label="Radzen Blazor" Value="MIT" />
+    <Fact Label="Material Symbols" Value="Apache-2.0" />
+    <Fact Label="Inter" Value="OFL-1.1" />
+    <Fact Label="Microsoft.Data.Sqlite, ASP.NET Core" Value="MIT" />
+    <Fact Label="SQLite" Value="Public domain" />
+    <Fact Label="SQLitePCLRaw" Value="Apache-2.0" />
+    <div class="nw-row"><div class="nw-row-label"><a href="https://github.com/picons/picons" target="_blank" rel="noopener">picons</a></div><div class="nw-row-value">GPL-3.0-only</div></div>
+</Section>
+
+@code {
+    private GuideConfig _guide = new();
+    private string _theme = "system";
+    private bool _discover;
+    private string? _publicUrl;
+    private Guid? _emulated;
+    private int _emulatedTuners = 4;
+
+    private sealed record Choice(Guid? Id, string Text);
+
+    private List<Choice> EmulationChoices => [new(null, T["settings.hdhomerun.off"]), .. Bouquets.All.Select(bouquet => new Choice(bouquet.Id, bouquet.Name))];
+
+    protected override void OnInitialized()
+    {
+        var current = Config.Current;
+
+        _guide = new GuideConfig
+        {
+            BroadcastEnabled = current.Guide.BroadcastEnabled,
+            IntervalHours = current.Guide.IntervalHours,
+            MaxTuners = current.Guide.MaxTuners,
+            Languages = current.Guide.Languages,
+            DaysAhead = current.Guide.DaysAhead,
+        };
+        _discover = current.DiscoverSatIp;
+        _publicUrl = current.Output.PublicUrl;
+        _emulated = current.Output.HdHomeRun.Bouquet;
+        _emulatedTuners = current.Output.HdHomeRun.Tuners;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _theme = await Js.InvokeAsync<string>("nightwave.theme");
+            StateHasChanged();
+        }
+    }
+
+    private async Task SetThemeAsync(string mode)
+    {
+        _theme = mode;
+        await Js.InvokeVoidAsync("nightwave.setTheme", mode);
+    }
+
+    /// <summary>A page keeps the language it was loaded with, so it is loaded again.</summary>
+    private async Task SetLanguageAsync(string? language)
+    {
+        await Config.UpdateAsync(config => config.Language = language);
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    private async Task SaveGuideAsync()
+    {
+        await Config.UpdateAsync(config => config.Guide = _guide);
+        Notifications.Notify(NotificationSeverity.Success, T["common.savedNote"]);
+    }
+
+    private async Task RefreshGuideAsync()
+    {
+        foreach (var guide in Guides)
+        {
+            await guide.RefreshAsync();
+        }
+
+        Notifications.Notify(NotificationSeverity.Success, T["settings.guide.refreshed"]);
+    }
+
+    private async Task SaveOutputAsync()
+    {
+        await Config.UpdateAsync(config =>
+        {
+            config.DiscoverSatIp = _discover;
+            config.Output.PublicUrl = _publicUrl;
+        });
+        Notifications.Notify(NotificationSeverity.Success, T["common.savedNote"]);
+    }
+
+    private async Task SaveEmulationAsync()
+    {
+        await Config.UpdateAsync(config =>
+        {
+            config.Output.HdHomeRun.Bouquet = _emulated;
+            config.Output.HdHomeRun.Tuners = _emulatedTuners;
+            config.Output.HdHomeRun.DeviceId ??= Nightwave.Tuners.Iptv.HdHomeRun.HdHomeRunProtocol.NewDeviceId();
+        });
+        Notifications.Notify(NotificationSeverity.Success, T["common.savedNote"]);
+    }
+
+    private async Task ClearCacheAsync()
+    {
+        if (await ConfirmDialog.AskAsync(Dialogs, T["settings.database.clear"], T["settings.database.clearBody"], T["settings.database.clear"]))
+        {
+            Database.ClearCache();
+            Notifications.Notify(NotificationSeverity.Success, T["settings.database.cleared"]);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        if (await ConfirmDialog.AskAsync(Dialogs, T["settings.database.reset"], T["settings.database.resetBody"], T["settings.database.resetShort"]))
+        {
+            Database.Reset();
+            Notifications.Notify(NotificationSeverity.Success, T["settings.database.wasReset"]);
+        }
+    }
+}

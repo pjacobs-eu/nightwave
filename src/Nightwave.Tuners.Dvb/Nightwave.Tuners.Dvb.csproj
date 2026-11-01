@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>SAT&gt;IP tuners with channel scan, broadcast guide and dvbapi descrambling.</Description>
+    <!-- The CSA descrambler works in batches over bit-sliced vectors. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nightwave.Core/Nightwave.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <InternalsVisibleTo Include="Nightwave.Tuners.Dvb.Tests" />
+  </ItemGroup>
+</Project>

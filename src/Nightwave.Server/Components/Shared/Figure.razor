@@ -1,0 +1,10 @@
+<div class="nw-figure"><span>@Label</span><strong>@Value @if (Unit is not null)
+    {<small>@Unit</small>}</strong></div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public string? Unit { get; set; }
+}

@@ -1,0 +1,19 @@
+@if (!string.IsNullOrEmpty(Text))
+{
+    <div class="nw-note @Tone" role="@(Tone == "nw-bad" ? "alert" : "status")">
+        <i class="rzi">@(Tone == "nw-bad" ? "error" : Tone == "nw-warn" ? "warning" : "info")</i>
+        <span>@Text</span>
+        @if (TextChanged.HasDelegate)
+        {
+            <button type="button" aria-label="@T["common.close"]" @onclick="() => TextChanged.InvokeAsync(null)"><i class="rzi">close</i></button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+
+    [Parameter] public EventCallback<string?> TextChanged { get; set; }
+
+    [Parameter] public string? Tone { get; set; }
+}

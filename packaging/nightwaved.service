@@ -1,0 +1,20 @@
+[Unit]
+Description=Nightwave television server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/nightwave/nightwaved
+Environment=NIGHTWAVE_DATA=/var/lib/nightwave
+User=nightwave
+# DVB cards belong to this group.
+SupplementaryGroups=video
+StateDirectory=nightwave
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

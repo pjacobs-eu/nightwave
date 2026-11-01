@@ -1,0 +1,111 @@
+@page "/tuners"
+@inject ConfigStore Config
+@inject DialogService Dialogs
+@inject LineupService Lineup
+@inject NotificationService Notifications
+
+<PageTitleBar Title="@T["nav.tuners"]" Subtitle="@T["tuners.intro"]">
+    <RadzenSplitButton Text="@T["tuners.add"]" Icon="add" Click="args => AddAsync(args?.Value?.ToString() ?? nameof(TunerKind.SatIp))">
+        <ChildContent>
+            <RadzenSplitButtonItem Text="SAT>IP" Value="@nameof(TunerKind.SatIp)" />
+            <RadzenSplitButtonItem Text="M3U" Value="@nameof(TunerKind.M3u)" />
+            <RadzenSplitButtonItem Text="@T["provider.dvb"]" Value="@nameof(TunerKind.Dvb)" />
+            <RadzenSplitButtonItem Text="HDHomeRun" Value="@nameof(TunerKind.HdHomeRun)" />
+        </ChildContent>
+    </RadzenSplitButton>
+</PageTitleBar>
+
+<Section>
+    @if (Config.Current.Tuners.Count == 0)
+    {
+        <div class="nw-empty">@T["tuners.none"]</div>
+    }
+    @foreach (var tuner in Config.Current.Tuners)
+    {
+        <div class="nw-row">
+            <span class="nw-dot @(tuner.Enabled ? "nw-good" : null)"></span>
+            <div class="nw-row-label">@tuner.Name
+                <small>@Describe(tuner)</small>
+            </div>
+            @if (tuner.EffectiveProxy is not null)
+            {
+                <span class="nw-pill nw-tint">@T["tuners.proxy.chip"]</span>
+            }
+            @if (tuner.SupportsRepair && tuner.Repair)
+            {
+                <span class="nw-pill">@T["tuners.repair.chip"]</span>
+            }
+            <span class="nw-pill">@T[$"provider.{tuner.Kind.ToString().ToLowerInvariant()}"]</span>
+            @if (tuner.Kind != TunerKind.SatIp)
+            {
+                <button class="nw-iconbutton" type="button" title="@T["tuners.refresh"]" aria-label="@T["tuners.refresh"]" @onclick="() => RefreshAsync(tuner)"><i class="rzi">refresh</i></button>
+            }
+            <button class="nw-iconbutton" type="button" aria-label="@T["common.edit"]" @onclick="() => OpenAsync(tuner)"><i class="rzi">edit</i></button>
+            <button class="nw-iconbutton nw-danger" type="button" aria-label="@T["common.delete"]" @onclick="() => RemoveAsync(tuner)"><i class="rzi">delete</i></button>
+        </div>
+    }
+</Section>
+
+@code {
+    private string Describe(TunerConfig tuner) => tuner.Kind switch
+    {
+        TunerKind.SatIp => string.IsNullOrWhiteSpace(tuner.SatIp.Address) ? tuner.SatIp.DescriptionUrl ?? string.Empty : tuner.SatIp.Address,
+        TunerKind.M3u => tuner.M3u.PlaylistUrl,
+        TunerKind.Dvb => $"adapter{tuner.Dvb.Adapter}/frontend{tuner.Dvb.Frontend}",
+        TunerKind.HdHomeRun => string.IsNullOrWhiteSpace(tuner.HdHomeRun.Address) ? T["tuners.hdhomerun.search"] : tuner.HdHomeRun.Address,
+        _ => string.Empty,
+    };
+
+    private Task AddAsync(string kind)
+    {
+        var parsed = Enum.Parse<TunerKind>(kind);
+
+        // Web streams have no transmission errors of the kind the repair is for.
+        return OpenAsync(new TunerConfig { Kind = parsed, Repair = parsed is TunerKind.SatIp or TunerKind.Dvb });
+    }
+
+    private async Task OpenAsync(TunerConfig tuner)
+    {
+        var copy = System.Text.Json.JsonSerializer.Deserialize<TunerConfig>(System.Text.Json.JsonSerializer.Serialize(tuner))!;
+        var saved = await Dialogs.OpenAsync<TunerDialog>(
+            T["tuners.dialog"],
+            new Dictionary<string, object?> { [nameof(TunerDialog.Tuner)] = copy },
+            new DialogOptions { Width = "540px" });
+
+        if (saved is TunerConfig result)
+        {
+            await Config.UpdateAsync(config =>
+            {
+                var index = config.Tuners.FindIndex(existing => existing.Id == result.Id);
+
+                if (index >= 0)
+                {
+                    config.Tuners[index] = result;
+                }
+                else
+                {
+                    config.Tuners.Add(result);
+                }
+            });
+        }
+    }
+
+    private async Task RefreshAsync(TunerConfig tuner)
+    {
+        var id = tuner.Kind.ToString().ToLowerInvariant();
+
+        if (Lineup.Provider(id) is IRefreshableTuner refreshable)
+        {
+            await refreshable.RefreshAsync();
+            Notifications.Notify(NotificationSeverity.Success, T["tuners.refreshed", (await Lineup.Provider(id)!.GetChannelsAsync()).Count]);
+        }
+    }
+
+    private async Task RemoveAsync(TunerConfig tuner)
+    {
+        if (await ConfirmDialog.AskAsync(Dialogs, T["tuners.removeTitle"], T["tuners.removeBody", tuner.Name], T["common.delete"]))
+        {
+            await Config.UpdateAsync(config => config.Tuners.RemoveAll(existing => existing.Id == tuner.Id));
+        }
+    }
+}

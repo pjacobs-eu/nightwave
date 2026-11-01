@@ -1,0 +1,281 @@
+@page "/streams/{Id:guid}"
+@implements IDisposable
+@inject StreamHub Hub
+@inject NavigationManager Navigation
+
+@if (_session is not { } session)
+{
+    <PageTitleBar Title="@T["nav.streams"]" />
+    <Section><div class="nw-empty">@T["streams.ended"]</div></Section>
+}
+else
+{
+    var analysis = session.Analyzer.Snapshot();
+    var signal = session.Telemetry?.Signal;
+    var transport = session.Telemetry?.Transport;
+    var facts = session.Details?.Broadcast;
+    var history = session.History;
+    var rate = history.LastOrDefault()?.BitRateMbps ?? 0;
+    var rates = session.PidBitRates;
+    var video = analysis.Video;
+    var descrambling = session.Telemetry?.Descrambling;
+
+    <PageTitleBar Title="@session.ChannelName" Subtitle="@($"{(session.StopMeasurement is null ? session.Client : T["streams.measurement"])} · {Format.Duration(DateTimeOffset.UtcNow - session.StartedAt)}")">
+        @if (signal is not null)
+        {
+            <span class="nw-pill @(signal.Locked ? "nw-good" : "nw-bad")"><span class="nw-dot @(signal.Locked ? "nw-good" : "nw-bad")"></span>@(signal.Locked ? T["signal.locked"] : T["signal.unlocked"])</span>
+        }
+        @if (descrambling is not null)
+        {
+            <span class="nw-pill @DescramblingPanel.Tone(descrambling.State)">@T[$"descrambler.state.{descrambling.State}"]</span>
+        }
+        @if (session.Bridge?.Stats is { Active: true })
+        {
+            <span class="nw-pill nw-warn">@T["bridge.active"]</span>
+        }
+        @if (session.StopMeasurement is { } stop)
+        {
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["streams.stop"]" Click="() => Stop(stop)" />
+        }
+    </PageTitleBar>
+
+    <div class="nw-figures">
+        <Figure Label="@T["streams.bitrate"]" Value="@($"{rate:0.00}")" Unit="Mbit/s" />
+        <Figure Label="@T["streams.average"]" Value="@($"{(history.Count > 0 ? history.Average(sample => sample.BitRateMbps) : 0):0.00}")" Unit="Mbit/s" />
+        <Figure Label="@T["signal.level"]" Value="@(signal?.Level is { } level ? $"{level:P0}" : "–")" />
+        <Figure Label="@T["signal.quality"]" Value="@(signal?.Quality is { } quality ? $"{quality:P0}" : "–")" />
+        <Figure Label="@T["streams.errors"]" Value="@Format.Number(analysis.ContinuityErrors + analysis.TransportErrors)" />
+    </div>
+
+    <div class="nw-cards">
+        <Section Title="@T["streams.bitrateHistory"]">
+            <div class="nw-chart">
+                <RadzenChart Style="block-size:150px" Animate="false" AllowZoom="false">
+                    <RadzenAreaSeries Data="@history" CategoryProperty="At" ValueProperty="BitRateMbps" Title="Mbit/s" Stroke="var(--nw-blue)" Fill="color-mix(in srgb, var(--nw-blue) 16%, transparent)" StrokeWidth="1.5" />
+                    <RadzenCategoryAxis Visible="false" />
+                    <RadzenValueAxis Min="0"><RadzenGridLines Visible="true" /></RadzenValueAxis>
+                    <RadzenLegend Visible="false" />
+                    <RadzenChartTooltipOptions Visible="false" />
+                </RadzenChart>
+            </div>
+        </Section>
+        @if (signal is not null)
+        {
+            <Section Title="@T["streams.signalHistory"]" Footer="@T["signal.footnote"]">
+                <div class="nw-chart">
+                    <RadzenChart Style="block-size:150px" Animate="false" AllowZoom="false">
+                        <RadzenLineSeries Data="@Percent(history, sample => sample.Level)" CategoryProperty="At" ValueProperty="Value" Title="@T["signal.level"]" Stroke="var(--nw-blue)" StrokeWidth="1.5" />
+                        <RadzenLineSeries Data="@Percent(history, sample => sample.Quality)" CategoryProperty="At" ValueProperty="Value" Title="@T["signal.quality"]" Stroke="var(--nw-green)" StrokeWidth="1.5" />
+                        <RadzenCategoryAxis Visible="false" />
+                        <RadzenValueAxis Min="0" Max="100"><RadzenGridLines Visible="true" /></RadzenValueAxis>
+                        <RadzenLegend Position="LegendPosition.Top" />
+                        <RadzenChartTooltipOptions Visible="false" />
+                    </RadzenChart>
+                </div>
+            </Section>
+        }
+    </div>
+
+    <div class="nw-cards">
+        @if (signal is not null)
+        {
+            <Section Title="@T["streams.signal"]" Footer="@T["signal.scaleNote"]">
+                <Meter Label="@T["signal.level"]" Fraction="signal.Level" Good=".59" Weak=".31" />
+                <Meter Label="@T["signal.quality"]" Fraction="signal.Quality" Good=".66" Weak=".33" />
+                <Fact Label="@T["signal.levelRaw"]" Value="@signal.LevelRaw" />
+                <Fact Label="@T["signal.qualityRaw"]" Value="@signal.QualityRaw" />
+                <Fact Label="SNR" Value="@(signal.SnrDb is { } snr ? $"{snr:0.0} dB" : null)" Absent="@T["signal.notReported"]" />
+                <Fact Label="BER" Value="@(signal.BitErrorRate is { } ber ? ber.ToString("0.0E0", CultureInfo.InvariantCulture) : null)" Absent="@T["signal.notReported"]" />
+            </Section>
+        }
+
+        <Section Title="@T["streams.health"]" Footer="@T["streams.healthNote"]">
+            <Fact Label="@T["health.sync"]" Value="@Format.Number(analysis.SyncLossBytes)" Tone="@Errors(analysis.SyncLossBytes)" />
+            <Fact Label="@T["health.continuity"]" Value="@Format.Number(analysis.ContinuityErrors)" Tone="@Errors(analysis.ContinuityErrors)" />
+            <Fact Label="@T["health.transport"]" Value="@Format.Number(analysis.TransportErrors)" Tone="@Errors(analysis.TransportErrors)" />
+            <Fact Label="@T["health.pat"]" Value="@Format.Number(analysis.PatIntervalErrors)" Tone="@Errors(analysis.PatIntervalErrors)" />
+            <Fact Label="@T["health.pcr"]" Value="@Format.Number(analysis.PcrIntervalErrors)" Tone="@Errors(analysis.PcrIntervalErrors)" />
+            <Fact Label="@T["health.pcrInterval"]" Value="@(analysis.PcrIntervalAverageMs is { } average ? $"{average:0.0} / {analysis.PcrIntervalMaximumMs:0.0} ms" : null)" />
+        </Section>
+    </div>
+
+    <div class="nw-cards">
+        <Section Title="@T["streams.video"]">
+            @if (video is null)
+            {
+                <div class="nw-empty">@T["streams.noVideo"]</div>
+            }
+            else
+            {
+                <Fact Label="@T["facts.codec"]" Value="@video.Codec" />
+                <Fact Label="@T["facts.resolution"]" Value="@($"{video.Width} × {video.Height}")" />
+                <Fact Label="@T["facts.frameRate"]" Value="@(video.FrameRate is { } fps ? $"{fps:0.##} fps" : null)" />
+                <Fact Label="@T["facts.scan"]" Value="@T[video.Interlaced ? "facts.interlaced" : "facts.progressive"]" />
+                <Fact Label="@T["facts.profile"]" Value="@(video.Profile is { } profile ? video.Level is { } level ? $"{profile} @ {level}" : profile : null)" />
+                <Fact Label="@T["facts.bitDepth"]" Value="@(video.BitDepth is { } depth ? $"{depth} bit" : null)" />
+                <Fact Label="@T["facts.chroma"]" Value="@video.ChromaFormat" />
+                <Fact Label="HDR" Value="@(video.Hdr ?? T["facts.sdr"])" />
+                @if (video.AspectRatio is { } aspect)
+                {
+                    <Fact Label="@T["facts.aspect"]" Value="@aspect" />
+                }
+            }
+        </Section>
+
+        <Section Title="@T["streams.service"]">
+            <Fact Label="@T["facts.provider"]" Value="@facts?.ServiceProvider" />
+            <Fact Label="@T["facts.serviceType"]" Value="@(facts is not null ? DvbNames.ServiceType(facts.ServiceType) : null)" />
+            <Fact Label="ONID" Value="@facts?.NetworkId.ToString(CultureInfo.InvariantCulture)" />
+            <Fact Label="TSID" Value="@facts?.TransportStreamId.ToString(CultureInfo.InvariantCulture)" />
+            <Fact Label="SID" Value="@((facts?.ServiceId ?? analysis.ProgramNumber)?.ToString(CultureInfo.InvariantCulture))" />
+            <Fact Label="PMT PID" Value="@(analysis.PmtPid is { } pmt ? Format.Pid(pmt) : null)" />
+            <Fact Label="PCR PID" Value="@(analysis.PcrPid is { } pcr ? Format.Pid(pcr) : null)" />
+            <Fact Label="@T["facts.caSystems"]" Value="@Format.CaSystems(analysis.CaSystems)" Absent="@T["facts.freeToAir"]" />
+        </Section>
+    </div>
+
+    <div class="nw-cards">
+        @if (facts is not null)
+        {
+            <Section Title="@T["streams.transponder"]" Footer="@T["facts.normNote"]" Class="nw-facts-wide">
+                <Fact Label="@T["facts.position"]" Value="@facts.Source" />
+                <Fact Label="@T["facts.system"]" Value="@facts.System" />
+                <Fact Label="@T["facts.frequency"]" Value="@(facts.FrequencyMhz is { } mhz ? $"{mhz:0.###} MHz" : null)" />
+                <Fact Label="@T["facts.polarisation"]" Value="@Format.Polarisation(facts.Polarization, T)" />
+                <Fact Label="@T["facts.symbolRate"]" Value="@(facts.SymbolRate is { } symbols ? $"{symbols:N0} kS/s" : null)" />
+                <Fact Label="@T["facts.modulation"]" Value="@Format.Modulation(facts.Modulation)" />
+                <Fact Label="FEC" Value="@CarrierCapacity.FecName(facts.Fec)" />
+                <Fact Label="@T["facts.rollOff"]" Value="@facts.RollOff" />
+                <Fact Label="@T["facts.pilots"]" Value="@((session.Telemetry?.Pilots ?? facts.Pilots) is { } pilots ? T[pilots ? "common.on" : "common.off"] : null)" />
+                <Fact Label="@T["facts.capacity"]" Value="@(CarrierCapacity.UsefulBitRate(facts.System, facts.SymbolRate, facts.Modulation, facts.Fec) is { } capacity ? $"{capacity:0.0} Mbit/s" : null)" />
+                <Fact Label="@T["facts.requiredEsN0"]" Value="@(CarrierCapacity.RequiredEsN0(facts.System, facts.Modulation, facts.Fec) is { } esn0 ? $"{esn0:0.00} dB" : null)" />
+                <Fact Label="@T["facts.device"]" Value="@session.Telemetry?.DeviceName" />
+                <Fact Label="@T["facts.input"]" Value="@session.Telemetry?.Input?.ToString(CultureInfo.InvariantCulture)" />
+                <Fact Label="@T["facts.frontEnd"]" Value="@session.Telemetry?.FrontEnd?.ToString(CultureInfo.InvariantCulture)" />
+            </Section>
+        }
+
+        @if (descrambling is not null)
+        {
+            <DescramblingPanel Reading="descrambling" />
+        }
+    </div>
+
+    @if (descrambling is not null)
+    {
+        <DescramblingDetails Reading="descrambling" Entries="analysis.CaEntries" History="history" />
+    }
+
+    <Section Title="@T["streams.pids"]" Plain="true">
+        <RadzenDataGrid Data="@analysis.Pids" TItem="PidSummary" Density="Density.Compact" AllowSorting="false">
+            <Columns>
+                <RadzenDataGridColumn TItem="PidSummary" Title="PID" Width="110px">
+                    <Template Context="pid">@Format.Pid(pid.Pid)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Title="@T["pids.kind"]" Width="100px">
+                    <Template Context="pid">@T[$"pids.kind.{pid.Kind}"]</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Property="Codec" Title="@T["facts.codec"]" Width="130px" />
+                <RadzenDataGridColumn TItem="PidSummary" Property="Language" Title="@T["pids.language"]" Width="80px" />
+                <RadzenDataGridColumn TItem="PidSummary" Title="@T["pids.format"]">
+                    <Template Context="pid">@Format.Audio(pid.Audio)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Title="@T["streams.bitrate"]" Width="120px" TextAlign="TextAlign.End">
+                    <Template Context="pid">@Format.BitRate(rates.GetValueOrDefault(pid.Pid))</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Title="@T["pids.packets"]" Width="110px" TextAlign="TextAlign.End">
+                    <Template Context="pid">@Format.Number(pid.Packets)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Title="CC" Width="60px" TextAlign="TextAlign.End">
+                    <Template Context="pid">@pid.ContinuityErrors</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="PidSummary" Title="@T["pids.flags"]" Width="90px">
+                    <Template Context="pid">
+                        @if (pid.CarriesPcr)
+                        {
+                            <span class="nw-pill">PCR</span>
+                        }
+                        @if (pid.Scrambled)
+                        {
+                            <span class="nw-pill nw-warn">CA</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </Section>
+
+    <div class="nw-cards nw-cards-3">
+        @if (transport is not null)
+        {
+            <Section Title="@T["streams.transport"]">
+                <Fact Label="@T["facts.path"]" Value="@transport.Path" />
+                <Fact Label="@T["transport.received"]" Value="@Format.Number(transport.DatagramsReceived)" />
+                <Fact Label="@T["transport.lost"]" Value="@Format.Number(transport.DatagramsLost)" Tone="@Errors(transport.DatagramsLost)" />
+                <Fact Label="@T["transport.reordered"]" Value="@Format.Number(transport.DatagramsReordered)" />
+            </Section>
+        }
+
+        @if (session.Repair?.Stats is { } repair)
+        {
+            <Section Title="@T["streams.repair"]">
+                <Fact Label="@T["repair.gaps"]" Value="@Format.Number(repair.GapsFound)" Tone="@Errors(repair.GapsFound)" />
+                <Fact Label="@T["repair.dropped"]" Value="@Format.Number(repair.ErrorPacketsDropped)" Tone="@Errors(repair.ErrorPacketsDropped)" />
+                <Fact Label="@T["repair.heldBack"]" Value="@Format.Number(repair.PacketsHeldBack)" />
+                <Fact Label="@T["repair.duplicates"]" Value="@Format.Number(repair.DuplicatesDropped)" />
+                <Fact Label="@T["repair.resync"]" Value="@Format.Number(repair.BytesResynchronised)" />
+                <Fact Label="@T["repair.leading"]" Value="@Format.Number(repair.LeadingPacketsDropped)" />
+            </Section>
+        }
+
+        @if (session.Bridge?.Stats is { } bridge)
+        {
+            <Section Title="@T["streams.bridge"]" Footer="@T["bridge.note"]">
+                <Fact Label="@T["bridge.state"]" Value="@T[bridge.Active ? "bridge.active" : "bridge.idle"]" Tone="@(bridge.Active ? "nw-warn" : null)" />
+                <Fact Label="@T["bridge.outages"]" Value="@Format.Number(bridge.Outages)" Tone="@Errors(bridge.Outages)" />
+                <Fact Label="@T["bridge.pictures"]" Value="@Format.Number(bridge.PicturesInserted)" />
+                <Fact Label="@T["bridge.silence"]" Value="@Format.Number(bridge.SilentFramesInserted)" />
+                <Fact Label="@T["bridge.time"]" Value="@($"{bridge.FrozenMilliseconds / 1000d:0.0} s")" />
+            </Section>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private StreamSession? _session;
+    private Timer? _timer;
+
+    private sealed record PercentPoint(DateTimeOffset At, double Value);
+
+    protected override void OnParametersSet() => _session = Hub.Find(Id);
+
+    protected override void OnInitialized() =>
+        _timer = new Timer(_ => _ = InvokeAsync(() =>
+        {
+            _session = Hub.Find(Id);
+            StateHasChanged();
+        }), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+    private static List<PercentPoint> Percent(IReadOnlyList<TelemetrySample> history, Func<TelemetrySample, double?> value) =>
+        [.. history.Where(sample => value(sample) is not null).Select(sample => new PercentPoint(sample.At, value(sample)!.Value * 100))];
+
+    private static string? Errors(long count) => count > 0 ? "nw-warn" : null;
+
+    private static string? ToneOf(TunedStreamDetailState state) => state switch
+    {
+        TunedStreamDetailState.Good => "nw-good",
+        TunedStreamDetailState.Warning => "nw-warn",
+        TunedStreamDetailState.Problem => "nw-bad",
+        _ => null,
+    };
+
+    private void Stop(CancellationTokenSource stop)
+    {
+        stop.Cancel();
+        Navigation.NavigateTo("streams");
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

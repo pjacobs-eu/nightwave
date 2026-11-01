@@ -1,0 +1,90 @@
+@page "/"
+@implements IDisposable
+@inject LineupService Lineup
+@inject StreamHub Hub
+@inject BouquetStore Bouquets
+@inject ConfigStore Config
+
+<PageTitleBar Title="@T["nav.overview"]" />
+
+<div class="nw-figures">
+    <Figure Label="@T["overview.channels"]" Value="@Format.Number(_channels)" />
+    <Figure Label="@T["overview.transponders"]" Value="@Format.Number(_transponders)" />
+    <Figure Label="@T["overview.bouquets"]" Value="@Format.Number(Bouquets.All.Count)" />
+    <Figure Label="@T["overview.streams"]" Value="@Format.Number(Hub.Sessions.Count)" />
+    <Figure Label="@T["overview.throughput"]" Value="@($"{Hub.Sessions.Sum(session => session.History.LastOrDefault()?.BitRateMbps ?? 0):0.0}")" Unit="Mbit/s" />
+</div>
+
+<Section Title="@T["overview.tuners"]">
+    @if (_tuners.Count == 0)
+    {
+        <div class="nw-empty">@T["overview.noTuners"]</div>
+    }
+    @foreach (var tuner in _tuners)
+    {
+        <a class="nw-row" href="tuners">
+            <span class="nw-dot @(tuner.Error is not null ? "nw-bad" : tuner.ActiveStreams > 0 ? "nw-good" : null)"></span>
+            <div class="nw-row-label">@tuner.Name
+                @if (tuner.Error is { } error)
+                {
+                    <small>@error</small>
+                }
+            </div>
+            <div class="nw-row-value">@T["overview.tunerUse", tuner.ActiveStreams, tuner.MaxStreams == 0 ? "∞" : tuner.MaxStreams]</div>
+            <i class="rzi nw-chevron">chevron_right</i>
+        </a>
+    }
+</Section>
+
+<Section Title="@T["overview.streams"]">
+    @if (Hub.Sessions.Count == 0)
+    {
+        <div class="nw-empty">@T["overview.noStreams"]</div>
+    }
+    @foreach (var session in Hub.Sessions)
+    {
+        <StreamRow Session="session" />
+    }
+</Section>
+
+@code {
+    private readonly CancellationTokenSource _stop = new();
+    private List<TunerStatus> _tuners = [];
+    private int _channels;
+    private int _transponders;
+    private Timer? _timer;
+
+    protected override void OnInitialized() =>
+        _timer = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var tuners = new List<TunerStatus>();
+
+            foreach (var provider in Lineup.Providers)
+            {
+                tuners.AddRange(await provider.GetTunersAsync(_stop.Token));
+            }
+
+            var channels = await Lineup.ChannelsAsync(_stop.Token);
+
+            _tuners = tuners;
+            _channels = channels.Count;
+            _transponders = channels.Where(channel => channel.Broadcast is not null).Select(channel => channel.Broadcast!.Transponder).Distinct().Count();
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the page.
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

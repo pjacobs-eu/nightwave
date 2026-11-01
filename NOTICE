@@ -1,0 +1,14 @@
+Nightwave uses third-party components:
+
+Radzen Blazor             MIT
+Material Symbols          Apache-2.0
+Inter                     OFL-1.1
+ASP.NET Core, Microsoft.Data.Sqlite   MIT
+SQLite                    Public domain
+SQLitePCLRaw              Apache-2.0
+
+The channel logos in picons.zip are the broadcasters' marks, collected by the picons
+contributors (https://github.com/picons/picons) under GPL-3.0-only; the license text is
+packaging/picons-GPL-3.0.txt, the source https://github.com/picons/picons/releases.
+They are a separate data file: nothing in the program links or embeds them, and the program
+runs without them.

@@ -1,0 +1,21 @@
+@inject DialogService Dialogs
+
+<form @onsubmit="Submit" @onsubmit:preventDefault="true">
+    <RadzenTextBox @bind-Value="Value" Placeholder="@T["bouquets.name"]" MaxLength="BouquetStore.MaxNameLength" Immediate="true" Style="inline-size:100%" aria-label="@T["bouquets.name"]" autofocus />
+    <div class="nw-dialog-actions">
+        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.cancel"]" Click="() => Dialogs.Close(null)" />
+        <RadzenButton ButtonType="ButtonType.Submit" Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Disabled="string.IsNullOrWhiteSpace(Value)" />
+    </div>
+</form>
+
+@code {
+    [Parameter] public string Value { get; set; } = string.Empty;
+
+    private void Submit()
+    {
+        if (!string.IsNullOrWhiteSpace(Value))
+        {
+            Dialogs.Close(Value);
+        }
+    }
+}

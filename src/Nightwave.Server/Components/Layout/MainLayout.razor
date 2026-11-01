@@ -1,0 +1,44 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject StreamHub Hub
+
+<RadzenComponents />
+
+<div class="nw-shell">
+    <aside class="nw-sidebar">
+        <div class="nw-brand"><div class="nw-wordmark" role="img" aria-label="Nightwave"></div></div>
+
+        <nav class="nw-nav" aria-label="@T["nav.menu"]">
+            <NavLink href="" Match="NavLinkMatch.All"><i class="rzi">speed</i>@T["nav.overview"]</NavLink>
+            <NavLink href="streams"><i class="rzi">monitoring</i>@T["nav.streams"]@if (Hub.Sessions.Count > 0)
+                {<span class="nw-nav-badge">@Hub.Sessions.Count</span>}</NavLink>
+
+            <div class="nw-nav-heading">@T["nav.reception"]</div>
+            <NavLink href="tuners"><i class="rzi">settings_input_antenna</i>@T["nav.tuners"]</NavLink>
+            <NavLink href="scan"><i class="rzi">radar</i>@T["nav.scan"]</NavLink>
+            <NavLink href="transponders"><i class="rzi">satellite_alt</i>@T["nav.transponders"]</NavLink>
+            <NavLink href="channels"><i class="rzi">format_list_bulleted</i>@T["nav.channels"]</NavLink>
+
+            <div class="nw-nav-heading">@T["nav.output"]</div>
+            <NavLink href="bouquets"><i class="rzi">playlist_play</i>@T["nav.bouquets"]</NavLink>
+
+            <div class="nw-nav-heading">@T["nav.system"]</div>
+            <NavLink href="descrambling"><i class="rzi">key</i>@T["nav.descrambling"]</NavLink>
+            <NavLink href="settings"><i class="rzi">tune</i>@T["nav.settings"]</NavLink>
+        </nav>
+
+        <form class="nw-sidebar-end" method="post" action="/auth/logout">
+            <button type="submit"><i class="rzi">logout</i>@T["nav.logout"]</button>
+        </form>
+    </aside>
+
+    <main class="nw-main"><div class="nw-content">@Body</div></main>
+</div>
+
+@code {
+    protected override void OnInitialized() => Hub.Changed += OnChanged;
+
+    private void OnChanged(object? sender, EventArgs args) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Hub.Changed -= OnChanged;
+}

@@ -1,0 +1,124 @@
+@page "/channels"
+@inject LineupService Lineup
+@inject ConfigStore Config
+@inject StreamHub Hub
+@inject DialogService Dialogs
+@inject NavigationManager Navigation
+
+<PageTitleBar Title="@T["nav.channels"]" Subtitle="@T["channels.count", Filtered.Count, _rows.Count]" />
+<Note @bind-Text="_error" Tone="nw-bad" />
+
+<div class="nw-toolbar">
+    <div class="nw-grow"><RadzenTextBox @bind-Value="_search" Immediate="true" Placeholder="@T["channels.search"]" Style="inline-size:100%" aria-label="@T["channels.search"]" /></div>
+    <div class="nw-segmented" role="group">
+        @foreach (var (value, label) in Kinds)
+        {
+            <button type="button" class="@(_kind == value ? "active" : null)" @onclick="() => _kind = value">@label</button>
+        }
+    </div>
+    <div class="nw-segmented" role="group">
+        @foreach (var (value, label) in Access)
+        {
+            <button type="button" class="@(_access == value ? "active" : null)" @onclick="() => _access = value">@label</button>
+        }
+    </div>
+</div>
+
+<RadzenDataGrid Data="@Filtered" TItem="Row" AllowVirtualization="true" Style="block-size:calc(100vh - 180px);min-block-size:320px" AllowSorting="true" AllowColumnResize="true" Density="Density.Compact" RowClick="args => OpenAsync(args.Data!)">
+    <Columns>
+        <RadzenDataGridColumn TItem="Row" Property="Name" Title="@T["channels.name"]" Width="230px" Frozen="true" />
+        <RadzenDataGridColumn TItem="Row" Property="Provider" Title="@T["facts.provider"]" Width="130px" />
+        <RadzenDataGridColumn TItem="Row" Property="Type" Title="@T["facts.serviceType"]" Width="130px" />
+        <RadzenDataGridColumn TItem="Row" Property="Source" Title="@T["facts.position"]" Width="80px" />
+        <RadzenDataGridColumn TItem="Row" Property="Frequency" Title="MHz" Width="96px" TextAlign="TextAlign.End" FormatString="{0:0.###}" />
+        <RadzenDataGridColumn TItem="Row" Property="Polarisation" Title="Pol" Width="50px" />
+        <RadzenDataGridColumn TItem="Row" Property="SymbolRate" Title="kS/s" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="System" Title="@T["facts.system"]" Width="80px" />
+        <RadzenDataGridColumn TItem="Row" Property="Modulation" Title="@T["facts.modulation"]" Width="90px" />
+        <RadzenDataGridColumn TItem="Row" Property="Fec" Title="FEC" Width="60px" />
+        <RadzenDataGridColumn TItem="Row" Property="Onid" Title="ONID" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Tsid" Title="TSID" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Sid" Title="SID" Width="70px" TextAlign="TextAlign.End" />
+        <RadzenDataGridColumn TItem="Row" Property="Ca" Title="@T["facts.caSystems"]" Width="220px" />
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    private List<Row> _rows = [];
+    private string _search = string.Empty;
+    private string _kind = "all";
+    private string _access = "all";
+    private string? _error;
+
+    private (string, string)[] Kinds => [("all", T["bouquets.filter.all"]), ("tv", T["channels.television"]), ("radio", T["channels.radio"])];
+
+    private (string, string)[] Access => [("all", T["bouquets.filter.all"]), ("free", T["channels.free"]), ("encrypted", T["channels.encrypted"])];
+
+    public sealed record Row(TvChannel Channel)
+    {
+        public string Name => Channel.Name;
+
+        public string? Provider => Channel.Broadcast?.ServiceProvider;
+
+        public string Type => DvbNames.ServiceType(Channel.Broadcast?.ServiceType);
+
+        public string? Source => Channel.Broadcast?.Source;
+
+        public double? Frequency => Channel.Broadcast?.FrequencyMhz;
+
+        public string? Polarisation => Channel.Broadcast?.Polarization;
+
+        public int? SymbolRate => Channel.Broadcast?.SymbolRate;
+
+        public string? System => Channel.Broadcast?.System;
+
+        public string? Modulation => Channel.Broadcast?.Modulation?.ToUpperInvariant();
+
+        public string? Fec => CarrierCapacity.FecName(Channel.Broadcast?.Fec);
+
+        public int? Onid => Channel.Broadcast?.NetworkId;
+
+        public int? Tsid => Channel.Broadcast?.TransportStreamId;
+
+        public int? Sid => Channel.Broadcast?.ServiceId;
+
+        public string Ca => string.Join(", ", (Channel.Broadcast?.CaSystems ?? []).Select(DvbNames.CaSystem).Distinct());
+    }
+
+    private List<Row> Filtered =>
+    [
+        .. _rows.Where(row =>
+            (_kind == "all" || (_kind == "radio") == (row.Channel.Kind == ChannelKind.Radio))
+            && (_access == "all" || (_access == "encrypted") == row.Channel.IsEncrypted)
+            && (_search.Length == 0
+                || row.Name.Contains(_search, StringComparison.CurrentCultureIgnoreCase)
+                || row.Provider?.Contains(_search, StringComparison.CurrentCultureIgnoreCase) == true
+                || row.Sid?.ToString(CultureInfo.InvariantCulture) == _search)),
+    ];
+
+    protected override async Task OnInitializedAsync() =>
+        _rows = [.. (await Lineup.ChannelsAsync()).OrderBy(channel => char.IsLetterOrDigit(channel.Name.FirstOrDefault()) ? 0 : 1).ThenBy(channel => channel.Name, StringComparer.CurrentCultureIgnoreCase).Select(channel => new Row(channel))];
+
+    private async Task OpenAsync(Row row)
+    {
+        var key = new ChannelKey(row.Channel.ProviderId, row.Channel.Id);
+        var measure = await Dialogs.OpenSideAsync<ChannelSheet>(
+            row.Name,
+            new Dictionary<string, object?> { [nameof(ChannelSheet.Channel)] = row.Channel },
+            new SideDialogOptions { Width = "420px", ShowMask = true, CloseDialogOnOverlayClick = true });
+
+        if (measure is true)
+        {
+            try
+            {
+                var session = await Hub.MeasureAsync(key, CancellationToken.None);
+
+                Navigation.NavigateTo($"streams/{session.Id}");
+            }
+            catch (NightwaveException error)
+            {
+                _error = $"{error.Message} {error.Remedy}";
+            }
+        }
+    }
+}

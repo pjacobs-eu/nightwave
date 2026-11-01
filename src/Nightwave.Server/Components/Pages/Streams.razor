@@ -1,0 +1,25 @@
+@page "/streams"
+@implements IDisposable
+@inject StreamHub Hub
+
+<PageTitleBar Title="@T["nav.streams"]" Subtitle="@T["streams.intro"]" />
+
+<Section>
+    @if (Hub.Sessions.Count == 0)
+    {
+        <div class="nw-empty">@T["streams.none"]</div>
+    }
+    @foreach (var session in Hub.Sessions)
+    {
+        <StreamRow Session="session" />
+    }
+</Section>
+
+@code {
+    private Timer? _timer;
+
+    protected override void OnInitialized() =>
+        _timer = new Timer(_ => _ = InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+    public void Dispose() => _timer?.Dispose();
+}

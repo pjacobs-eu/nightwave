@@ -1,0 +1,52 @@
+@* The keys over time: how long answers take, what went back and forth, which systems are on offer. *@
+<Section Title="@T["streams.ecmHistory"]">
+    <div class="nw-chart">
+        <RadzenChart Style="block-size:150px" Animate="false" AllowZoom="false">
+            <RadzenLineSeries Data="@Points" CategoryProperty="At" ValueProperty="EcmTimeMs" Title="ms" Stroke="var(--nw-indigo)" StrokeWidth="1.5" />
+            <RadzenCategoryAxis Visible="false" />
+            <RadzenValueAxis Min="0"><RadzenGridLines Visible="true" /></RadzenValueAxis>
+            <RadzenLegend Visible="false" />
+            <RadzenChartTooltipOptions Visible="false" />
+        </RadzenChart>
+    </div>
+</Section>
+
+<Section Class="nw-facts-3">
+    <Fact Label="@T["descrambler.ecmTime"]" Value="@(Reading.EcmTimeMs is { } time ? $"{time} ms" : null)" Tone="@(Reading.EcmTimeMs > 1500 ? "nw-warn" : null)" />
+    <Fact Label="@T["descrambler.ecmSpread"]" Value="@(Reading.EcmTimeAverageMs is { } average ? $"{Reading.EcmTimeFastestMs} / {average:0} / {Reading.EcmTimeSlowestMs} ms" : null)" />
+    <Fact Label="@T["descrambler.answered"]" Value="@Format.Number(Reading.EcmsAnswered)" />
+    <Fact Label="@T["descrambler.keys"]" Value="@Format.Number(Reading.KeysReceived)" />
+    <Fact Label="@T["descrambler.forwarded"]" Value="@Format.Number(Reading.EcmsForwarded)" />
+    <Fact Label="@T["descrambler.emms"]" Value="@(Reading.EmmsForwarded > 0 ? Format.Number(Reading.EmmsForwarded) : null)" Absent="@T["descrambler.noEmms"]" />
+    <Fact Label="@T["descrambler.otherSections"]" Value="@Format.Number(Reading.OtherSectionsForwarded)" />
+    <Fact Label="@T["descrambler.dropped"]" Value="@Format.Number(Reading.SectionsDropped)" Tone="@(Reading.SectionsDropped > 0 ? "nw-warn" : null)" />
+    <Fact Label="@T["descrambler.stillScrambled"]" Value="@Format.Number(Reading.StillScrambledPackets)" Tone="@(Reading.StillScrambledPackets > 0 ? "nw-warn" : null)" />
+</Section>
+
+@if (Entries.Count > 0)
+{
+    <Section Title="@T["descrambler.candidates"]">
+        @foreach (var entry in Entries)
+        {
+            var active = entry.System == Reading.CaId && (Reading.EcmPid is null || entry.EcmPid == Reading.EcmPid);
+
+            <div class="nw-row">
+                <div class="nw-row-label">@DvbNames.CaSystemWithId(entry.System)<small>ECM PID @Format.Pid(entry.EcmPid)</small></div>
+                @if (active)
+                {
+                    <span class="nw-pill nw-good">@T["descrambler.candidateActive"]</span>
+                }
+            </div>
+        }
+    </Section>
+}
+
+@code {
+    [Parameter, EditorRequired] public DescramblingReading Reading { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<CaEntry> Entries { get; set; } = [];
+
+    [Parameter] public IReadOnlyList<TelemetrySample> History { get; set; } = [];
+
+    private List<TelemetrySample> Points => [.. History.Where(sample => sample.EcmTimeMs is not null)];
+}

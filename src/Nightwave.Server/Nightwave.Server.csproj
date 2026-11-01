@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <Description>nightwaved: tuners in, playlists and guides out.</Description>
+    <AssemblyName>nightwaved</AssemblyName>
+    <RootNamespace>Nightwave.Server</RootNamespace>
+    <!-- The markup of Razor components is not API, and the analyzers read generated code as if it were. -->
+    <NoWarn>$(NoWarn);CA1515;CA2007;CA1822;CA1812;CA1305;CA1310;CA1307;CA1311;CA1304;CA2000;CA1859;CA1849;CA1001;CA2234;IDE0005</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nightwave.Core/Nightwave.Core.csproj" />
+    <ProjectReference Include="../Nightwave.Tuners.Dvb/Nightwave.Tuners.Dvb.csproj" />
+    <ProjectReference Include="../Nightwave.Tuners.Iptv/Nightwave.Tuners.Iptv.csproj" />
+    <PackageReference Include="Radzen.Blazor" />
+    <EmbeddedResource Include="i18n/*.json" />
+    <InternalsVisibleTo Include="Nightwave.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Beside the program, never compiled in: the logos are GPL-3.0 data, built by packaging/picons.sh. -->
+    <None Include="../../packaging/picons.zip" Condition="Exists('../../packaging/picons.zip')" Link="picons.zip" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,21 @@
+@* One line of facts. A value nobody reported reads as such rather than as a blank. *@
+<div class="nw-row">
+    <div class="nw-row-label">@Label</div>
+    <div class="nw-row-value @Tone @(Missing ? "nw-none" : null) @(Mono ? "nw-mono" : null)">@(Missing ? (Absent ?? "–") : Value)</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>What is shown when there is no value.</summary>
+    [Parameter] public string? Absent { get; set; }
+
+    /// <summary><c>nw-good</c>, <c>nw-warn</c> or <c>nw-bad</c>.</summary>
+    [Parameter] public string? Tone { get; set; }
+
+    [Parameter] public bool Mono { get; set; }
+
+    private bool Missing => string.IsNullOrEmpty(Value);
+}

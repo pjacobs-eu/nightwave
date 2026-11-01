@@ -1,0 +1,114 @@
+@* What is shown as a channel's logo: what its tuner offers, a picture of our own, or nothing. *@
+@inject ChannelLogoStore Logos
+@inject LineupService Lineup
+@inject NotificationService Notifications
+
+<Section Title="@T["logo.title"]" Footer="@T["logo.note"]">
+    <div class="nw-row">
+        <div class="nw-logo-preview">
+            @if (Preview is { } address)
+            {
+                <img src="@address" alt="@T["logo.preview", Channel.Name]" />
+            }
+            else
+            {
+                <i class="rzi" aria-hidden="true">hide_image</i>
+            }
+        </div>
+        <div class="nw-segmented" role="group" aria-label="@T["logo.title"]">
+            <button type="button" class="@(Mode == ChannelLogoMode.Standard ? "active" : null)" @onclick="ResetAsync">@T["logo.standard"]</button>
+            <button type="button" class="@(_custom ? "active" : null)" @onclick="() => _custom = true">@T["logo.custom"]</button>
+            <button type="button" class="@(Mode == ChannelLogoMode.Removed && !_custom ? "active" : null)" @onclick="RemoveAsync">@T["logo.removed"]</button>
+        </div>
+    </div>
+    @if (_custom)
+    {
+        <div class="nw-row">
+            <div class="nw-row-label">@T["logo.upload"]<small>@T["logo.uploadHelp"]</small></div>
+            <label class="nw-filebutton">
+                @T["logo.choose"]
+                <InputFile accept="image/png,image/jpeg,image/webp" OnChange="UploadAsync" />
+            </label>
+        </div>
+        <div class="nw-row">
+            <div class="nw-row-label">@T["logo.address"]</div>
+            <RadzenTextBox @bind-Value="_address" Placeholder="https://" Style="flex:1 1 180px;min-inline-size:0" aria-label="@T["logo.address"]" />
+            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.save"]" Disabled="string.IsNullOrWhiteSpace(_address)" Click="SaveAddressAsync" />
+        </div>
+    }
+</Section>
+
+@code {
+    private TvChannel? _current;
+    private bool _custom;
+    private string? _address;
+
+    [Parameter, EditorRequired] public TvChannel Channel { get; set; } = default!;
+
+    private ChannelKey Key => new(Channel.ProviderId, Channel.Id);
+
+    private ChannelLogoChoice? Choice => Logos.Find(Key);
+
+    private ChannelLogoMode Mode => Choice?.Mode ?? ChannelLogoMode.Standard;
+
+    private string? Preview => Lineup.ServesLogo(Key)
+        ? $"logo/{Key.Encoded}?v={Choice?.Picture?.Tag}"
+        : (_current ?? Channel).Logo?.ToString();
+
+    protected override void OnInitialized()
+    {
+        _custom = Mode is ChannelLogoMode.File or ChannelLogoMode.Address;
+        _address = Choice?.Address?.ToString();
+    }
+
+    private async Task ResetAsync()
+    {
+        _custom = false;
+        await Logos.ResetAsync(Key);
+        await ReloadAsync();
+    }
+
+    private async Task RemoveAsync()
+    {
+        _custom = false;
+        await Logos.RemoveAsync(Key);
+        await ReloadAsync();
+    }
+
+    private async Task SaveAddressAsync()
+    {
+        try
+        {
+            await Logos.SetAddressAsync(Key, _address!);
+            await ReloadAsync();
+        }
+        catch (ArgumentException error)
+        {
+            Notifications.Notify(NotificationSeverity.Error, T["logo.addressInvalid"], error.Message);
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            using var content = new MemoryStream();
+
+            await using (var upload = args.File.OpenReadStream(ChannelLogoStore.MaxBytes))
+            {
+                await upload.CopyToAsync(content);
+            }
+
+            await Logos.SetFileAsync(Key, content.ToArray());
+            await ReloadAsync();
+        }
+        catch (Exception error) when (error is ArgumentException or IOException)
+        {
+            Notifications.Notify(NotificationSeverity.Error, T["logo.uploadInvalid"], T["logo.uploadHelp"]);
+        }
+    }
+
+    /// <summary>The channel as it goes out now, for what the preview shows.</summary>
+    private async Task ReloadAsync() =>
+        _current = (await Lineup.ChannelsAsync()).FirstOrDefault(channel => new ChannelKey(channel.ProviderId, channel.Id).Equals(Key));
+}

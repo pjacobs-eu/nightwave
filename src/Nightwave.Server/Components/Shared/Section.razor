@@ -1,0 +1,32 @@
+<section class="nw-section">
+    @if (Title is not null)
+    {
+        <h2>@Title</h2>
+    }
+    @if (Plain)
+    {
+        @ChildContent
+    }
+    else
+    {
+        <div class="nw-group @Class">@ChildContent</div>
+    }
+    @if (Footer is not null)
+    {
+        <p class="nw-section-foot">@Footer</p>
+    }
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Footer { get; set; }
+
+    /// <summary>Without the grouped background, for content that brings its own.</summary>
+    [Parameter] public bool Plain { get; set; }
+
+    /// <summary>Further classes for the group, such as a layout for its rows.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

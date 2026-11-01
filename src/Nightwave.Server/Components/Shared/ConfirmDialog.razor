@@ -1,0 +1,21 @@
+@inject DialogService Dialogs
+
+<p style="margin:0">@Body</p>
+<div class="nw-dialog-actions">
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.cancel"]" Click="() => Dialogs.Close(false)" />
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="@(Destructive ? ButtonStyle.Danger : ButtonStyle.Primary)" Text="@Confirm" Click="() => Dialogs.Close(true)" />
+</div>
+
+@code {
+    [Parameter] public string Body { get; set; } = string.Empty;
+
+    [Parameter] public string Confirm { get; set; } = string.Empty;
+
+    [Parameter] public bool Destructive { get; set; } = true;
+
+    public static async Task<bool> AskAsync(DialogService dialogs, string title, string body, string confirm, bool destructive = true) =>
+        await dialogs.OpenAsync<ConfirmDialog>(
+            title,
+            new Dictionary<string, object?> { [nameof(Body)] = body, [nameof(Confirm)] = confirm, [nameof(Destructive)] = destructive },
+            new DialogOptions { Width = "380px", ShowClose = false }) is true;
+}

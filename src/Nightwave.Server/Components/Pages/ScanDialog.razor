@@ -1,0 +1,25 @@
+@inject DialogService Dialogs
+
+<div class="nw-group" style="background:var(--nw-fill-2)">
+    <div class="nw-row">
+        <div class="nw-segmented" role="group" style="inline-size:100%">
+            <button type="button" style="flex:1" class="@(_mode == ScanMode.Replace ? "active" : null)" @onclick="() => _mode = ScanMode.Replace">@T["scan.mode.replace"]</button>
+            <button type="button" style="flex:1" class="@(_mode == ScanMode.Merge ? "active" : null)" @onclick="() => _mode = ScanMode.Merge">@T["scan.mode.merge"]</button>
+        </div>
+    </div>
+    <SettingRow Label="@T["scan.includeEncrypted"]"><RadzenSwitch @bind-Value="_encrypted" /></SettingRow>
+    <SettingRow Label="@T["scan.includeRadio"]"><RadzenSwitch @bind-Value="_radio" /></SettingRow>
+</div>
+<p class="nw-section-foot">@T[_mode == ScanMode.Replace ? "scan.mode.replaceHelp" : "scan.mode.mergeHelp"]</p>
+<div class="nw-dialog-actions">
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["common.cancel"]" Click="() => Dialogs.Close(null)" />
+    <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["scan.start"]" Click="() => Dialogs.Close(new Choice(_mode, _encrypted, _radio))" />
+</div>
+
+@code {
+    public sealed record Choice(ScanMode Mode, bool Encrypted, bool Radio);
+
+    private ScanMode _mode = ScanMode.Replace;
+    private bool _encrypted = true;
+    private bool _radio = true;
+}

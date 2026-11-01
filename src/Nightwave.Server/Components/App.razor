@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="@CultureInfo.CurrentUICulture.TwoLetterISOLanguageName">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <base href="/" />
+    <title>Nightwave</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <script>try { var theme = localStorage.getItem('nightwave.theme'); if (theme) document.documentElement.dataset.theme = theme; } catch (e) { }</script>
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/standard-base.css" />
+    <link rel="stylesheet" href="app.css" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <dialog id="components-reconnect-modal" class="nw-reconnect" aria-labelledby="nw-reconnect-title" data-countdown="@T["reconnect.countdown"]" data-waiting="@T["reconnect.waiting"]">
+        <div class="nw-reconnect-spinner" aria-hidden="true"></div>
+        <h2 id="nw-reconnect-title">@T["reconnect.title"]</h2>
+        <p>@T["reconnect.body"]</p>
+        <p class="nw-reconnect-note" role="status" data-note></p>
+        <button type="button" data-reload>@T["reconnect.reload"]</button>
+    </dialog>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="reconnect.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+    <script>window.nightwave = {
+            copy: text => navigator.clipboard.writeText(text),
+            theme: () => document.documentElement.dataset.theme || 'system',
+            setTheme: theme => {
+                try { if (theme === 'system') localStorage.removeItem('nightwave.theme'); else localStorage.setItem('nightwave.theme', theme); } catch (e) { }
+                if (theme === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+            },
+        };</script>
+</body>
+</html>

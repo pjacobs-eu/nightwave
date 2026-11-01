@@ -1,0 +1,100 @@
+@page "/descrambling"
+@using System.Net.Sockets
+@implements IDisposable
+@inject ConfigStore Config
+@inject NotificationService Notifications
+@inject StreamHub Hub
+
+<PageTitleBar Title="@T["nav.descrambling"]" Subtitle="@T["descrambling.intro"]" />
+
+<Section Title="@T["descrambling.server"]">
+    <SettingRow Label="@T["descrambling.enabled"]"><RadzenSwitch @bind-Value="_settings.Enabled" /></SettingRow>
+    <SettingRow Label="@T["descrambling.host"]"><RadzenTextBox @bind-Value="_settings.Host" Disabled="!_settings.Enabled" Immediate="true" /></SettingRow>
+    <SettingRow Label="@T["descrambling.port"]" Help="@T["descrambling.portHelp"]"><RadzenNumeric @bind-Value="_settings.Port" Min="1" Max="65535" Disabled="!_settings.Enabled" /></SettingRow>
+    <div class="nw-row" style="justify-content:flex-end">
+        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Light" Text="@T["descrambling.test"]" Disabled="!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.Host)" IsBusy="_testing" Click="TestAsync" />
+        <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Text="@T["common.save"]" Click="SaveAsync" />
+    </div>
+</Section>
+
+<Note @bind-Text="_result" Tone="@(_reached ? null : "nw-bad")" />
+
+<Section Title="@T["descrambling.active"]">
+    @if (Running.Count == 0)
+    {
+        <div class="nw-empty">@T["descrambling.noneActive"]</div>
+    }
+    @foreach (var (session, reading) in Running)
+    {
+        <a class="nw-row" href="streams/@session.Id">
+            <span class="nw-dot @DescramblingPanel.Tone(reading.State)"></span>
+            <div class="nw-row-label">@session.ChannelName
+                <small>@(reading.CaId is { } caid ? DvbNames.CaSystemWithId(caid) : T[$"descrambler.state.{reading.State}"])@(reading.Reader is { Length: > 0 } reader ? $" · {reader}" : null)@(reading.Hops is { } hops ? $" · {T["descrambler.hopsCount", hops]}" : null)</small>
+            </div>
+            <div class="nw-row-value">@(reading.EcmTimeMs is { } time ? $"{time} ms" : null)</div>
+            <i class="rzi nw-chevron">chevron_right</i>
+        </a>
+    }
+</Section>
+
+<Section Title="@T["descrambling.algorithms"]" Footer="@T["descrambling.algorithmsNote"]">
+    <Fact Label="DVB-CSA" Value="@T["descrambling.csa"]" />
+    <Fact Label="DVB-CSA (iCAM)" Value="@T["descrambling.icam"]" />
+    <Fact Label="AES-128" Value="ECB, CBC" />
+    <Fact Label="DVB-CISSA" Value="AES-128 CBC" />
+    <Fact Label="DES" Value="ECB" />
+</Section>
+
+@code {
+    private DescramblingConfig _settings = new();
+    private string? _result;
+    private bool _reached;
+    private bool _testing;
+    private Timer? _timer;
+
+    private List<(StreamSession Session, DescramblingReading Reading)> Running =>
+        [.. Hub.Sessions.Select(session => (session, reading: session.Telemetry?.Descrambling)).Where(entry => entry.reading is not null).Select(entry => (entry.session, entry.reading!))];
+
+    public void Dispose() => _timer?.Dispose();
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(_ => _ = InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+
+        var current = Config.Current.Descrambling;
+
+        _settings = new DescramblingConfig { Enabled = current.Enabled, Host = current.Host, Port = current.Port };
+    }
+
+    private async Task SaveAsync()
+    {
+        await Config.UpdateAsync(config => config.Descrambling = _settings);
+        Notifications.Notify(NotificationSeverity.Success, T["common.savedNote"]);
+    }
+
+    private async Task TestAsync()
+    {
+        _testing = true;
+        _result = null;
+
+        try
+        {
+            using var client = new TcpClient();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            await client.ConnectAsync(_settings.Host!, _settings.Port, timeout.Token);
+
+            _reached = true;
+            _result = T["descrambling.reached", _settings.Host, _settings.Port];
+        }
+        catch (Exception error) when (error is SocketException or OperationCanceledException)
+        {
+            _reached = false;
+            _result = T["descrambling.unreachable", _settings.Host, _settings.Port, error.Message];
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+}

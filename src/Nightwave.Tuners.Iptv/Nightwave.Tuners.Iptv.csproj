@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>M3U playlists and HDHomeRun devices as tuners, with a proxy per tuner.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nightwave.Core/Nightwave.Core.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <InternalsVisibleTo Include="Nightwave.Tuners.Iptv.Tests" />
+  </ItemGroup>
+</Project>

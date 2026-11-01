@@ -1,0 +1,11 @@
+services:
+  nightwaved:
+    build: .
+    # SAT>IP discovery is multicast and its streams are RTP on ports a bridge network would not pass.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    # For DVB cards in this machine. Without one, leave this out: Docker refuses a missing device.
+    # devices:
+    #   - /dev/dvb:/dev/dvb
