@@ -16,6 +16,9 @@ internal sealed record ScanTimings
     /// </summary>
     public TimeSpan Lock { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>The pause before a transponder that gave nothing is tried again.</summary>
+    public TimeSpan Retry { get; init; } = TimeSpan.FromSeconds(1);
+
     /// <summary>
     /// The same while searching a cable or an aerial blindly. No input to switch there, and a
     /// frequency that locks does so within a second; every frequency without a signal costs this.
@@ -74,17 +77,22 @@ internal static class MuxScanner
     /// as <paramref name="lockWindow"/> (by default <see cref="ScanTimings.Lock"/>) is over when
     /// the tuner reports that it has no lock - with that report in <see cref="TunerTransportException.Signal"/>.
     /// </summary>
+    /// <param name="expectedTransportStream">
+    /// The transport stream the NIT says is here, where it said so. Tables of any other are what
+    /// the device still had of the transponder before, and are not looked at.
+    /// </param>
     public static async Task<MuxScanResult> ScanAsync(
         ITsTransport transport,
         ScanTimings timings,
         bool readNetwork,
         CancellationToken cancellationToken,
-        TimeSpan? lockWindow = null)
+        TimeSpan? lockWindow = null,
+        int? expectedTransportStream = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentNullException.ThrowIfNull(timings);
 
-        var state = new State();
+        var state = new State(expectedTransportStream);
         var basePids = new HashSet<int> { TransportPacket.PatPid, TransportPacket.SdtPid };
         if (readNetwork)
         {
@@ -218,7 +226,20 @@ internal static class MuxScanner
             // Out of time with the PAT in: what arrived is what there is.
         }
 
-        return state.Result();
+        var result = state.Result();
+
+        // A PAT and not one other table in all that time is no transponder, it is a PAT left over
+        // from the one before, on a stream that went quiet after it. Kept, its services would
+        // replace the good channels of that transponder and this one's would be lost.
+        if (result.Services.Count > 0
+            && result.Network.Count == 0
+            && result.Services.All(service => service.ProgramMap is null && service.Description is null))
+        {
+            throw new TunerTransportException(
+                $"Only a program association table of transport stream {result.TransportStreamId} arrived, and nothing else in {clock.Elapsed.TotalSeconds:0} seconds.");
+        }
+
+        return result;
     }
 
     /// <summary>The tables of one transponder as they come in.</summary>
@@ -230,7 +251,7 @@ internal static class MuxScanner
     /// SDT of one transponder next to the PAT of another made every service in it a channel of the
     /// wrong transponder.
     /// </remarks>
-    private sealed class State
+    private sealed class State(int? expectedTransportStream)
     {
         private readonly Dictionary<int, SectionCollector<ServiceDescriptionTable>> _sdt = new();
         private readonly SectionCollector<NetworkInformationTable> _nit = new();
@@ -261,7 +282,8 @@ internal static class MuxScanner
             switch (section[0])
             {
                 case ProgramAssociationTable.TableId when pid == TransportPacket.PatPid:
-                    if (ProgramAssociationTable.Parse(section) is not { } pat)
+                    if (ProgramAssociationTable.Parse(section) is not { } pat
+                        || (expectedTransportStream is { } expected && pat.TransportStreamId != expected))
                     {
                         break;
                     }

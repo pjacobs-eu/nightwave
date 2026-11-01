@@ -184,6 +184,52 @@ public sealed class OffAirChannelTests
         Assert.Equal("Sky Sport Bundesliga", result.Services[0].Description?.Name);
     }
 
+    /// <summary>
+    /// What a whole channel scan lost RTL HD to: 10832 H gave the PAT of 10817 V, then silence. Its
+    /// services then replaced the channels of 10817 V, and RTL HD never showed up at all.
+    /// </summary>
+    [Fact]
+    public async Task A_leftover_table_and_then_silence_is_a_failure_and_no_transponder()
+    {
+        var stalePat = TsBuilder.Pat(1056, 0, (29951, 0x100), (29956, 0x101));
+        var transport = new FakeTransport(new TuneRequest(SampleMux.Tuning, 1), TsBuilder.Packets(stalePat, 0, 0));
+
+        await Assert.ThrowsAsync<TunerTransportException>(() => MuxScanner.ScanAsync(transport, Timings, readNetwork: false, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task With_the_nit_to_go_by_a_table_of_another_transport_stream_is_not_looked_at()
+    {
+        var stalePat = TsBuilder.Pat(1056, 0, (29951, 0x100));
+        var pat = TsBuilder.Pat(1057, 0, (61200, 0x60));
+        var pmt = TsBuilder.Pmt(61200, 0, 0x101, [], (0x1B, 0x101, []));
+        var sdt = TsBuilder.Sdt(1057, 1, 0, (61200, false, TsBuilder.ServiceDescriptor(0x19, "RTL", "RTL HD")));
+        var packets = new List<byte[]>();
+
+        for (var round = 0; round < 4; round++)
+        {
+            packets.AddRange(TsBuilder.Packets(stalePat, 0, round * 2));
+            packets.AddRange(TsBuilder.Packets(pat, 0, (round * 2) + 1));
+            packets.AddRange(TsBuilder.Packets(pmt, 0x60, round));
+            packets.AddRange(TsBuilder.Packets(sdt, 0x11, round));
+        }
+
+        var transport = new FakeTransport(new TuneRequest(SampleMux.Tuning, 1), packets);
+
+        var result = await MuxScanner.ScanAsync(transport, Timings, readNetwork: false, CancellationToken.None, expectedTransportStream: 1057);
+
+        Assert.Equal(1057, result.TransportStreamId);
+        Assert.Equal("RTL HD", Assert.Single(result.Services).Description?.Name);
+    }
+
+    [Fact]
+    public async Task When_the_expected_transport_stream_never_comes_the_scan_says_so()
+    {
+        var transport = new FakeTransport(new TuneRequest(SampleMux.Tuning, 1), TsBuilder.Packets(TsBuilder.Pat(1056, 0, (29951, 0x100)), 0, 0));
+
+        await Assert.ThrowsAsync<TunerTransportException>(() => MuxScanner.ScanAsync(transport, Timings, readNetwork: false, CancellationToken.None, expectedTransportStream: 1057));
+    }
+
     private static readonly ScanTimings Timings = new()
     {
         Lock = TimeSpan.FromMilliseconds(200),

@@ -19,6 +19,63 @@ public sealed class RtpReorderTests
         }
     }
 
+    /// <summary>A stream of a few tables: a datagram every two seconds, and a gap must not hold it for a minute.</summary>
+    [Fact]
+    public void A_gap_on_a_sparse_stream_is_not_waited_for()
+    {
+        var now = 0L;
+        var buffer = new RtpReorderBuffer(() => now);
+        var delivered = new List<int>();
+
+        void Arrive(int sequence)
+        {
+            now += 2000;
+            buffer.Take(sequence, [0], (number, _) => delivered.Add(number));
+        }
+
+        Arrive(100);
+        Arrive(105);
+        Arrive(106);
+
+        Assert.Equal([100, 105, 106], delivered);
+    }
+
+    [Fact]
+    public void Numbers_starting_over_lower_after_a_quiet_moment_are_a_new_stream_not_latecomers()
+    {
+        var now = 0L;
+        var buffer = new RtpReorderBuffer(() => now);
+        var delivered = new List<int>();
+
+        void Arrive(int sequence)
+        {
+            now += 2000;
+            buffer.Take(sequence, [0], (number, _) => delivered.Add(number));
+        }
+
+        Arrive(500);
+        Arrive(40);
+        Arrive(41);
+
+        Assert.Equal([500, 40, 41], delivered);
+    }
+
+    [Fact]
+    public void Datagrams_close_together_are_still_sorted()
+    {
+        var now = 1000L;
+        var buffer = new RtpReorderBuffer(() => now);
+        var delivered = new List<int>();
+
+        foreach (var sequence in new[] { 5, 7, 6, 8 })
+        {
+            now += 1;
+            buffer.Take(sequence, [0], (number, _) => delivered.Add(number));
+        }
+
+        Assert.Equal([5, 6, 7, 8], delivered);
+    }
+
     [Fact]
     public void Datagrams_in_order_pass_straight_through()
     {

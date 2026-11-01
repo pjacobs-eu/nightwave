@@ -340,7 +340,7 @@ internal sealed partial class DvbChannelScanner : IChannelScanner, IDisposable
             var alternatives = run.Plan[run.Next];
             run.Report(alternatives[0].Describe(), run.Plan.Count, run.Next);
 
-            var (result, used, failure) = await ScanTransponderAsync(run.Input, alternatives, cancellationToken).ConfigureAwait(false);
+            var (result, used, failure) = await ScanTransponderAsync(run, alternatives, cancellationToken).ConfigureAwait(false);
             run.Next++;
 
             if (result is null || used is null)
@@ -365,7 +365,7 @@ internal sealed partial class DvbChannelScanner : IChannelScanner, IDisposable
 
     /// <summary>Tunes one transponder, trying each alternative until one locks.</summary>
     private async Task<(MuxScanResult? Result, TuningParameters? Used, string? Failure)> ScanTransponderAsync(
-        ScanInput input,
+        ScanRun run,
         IReadOnlyList<TuningParameters> alternatives,
         CancellationToken cancellationToken)
     {
@@ -373,7 +373,7 @@ internal sealed partial class DvbChannelScanner : IChannelScanner, IDisposable
 
         foreach (var tuning in alternatives)
         {
-            var (result, error) = await TryScanAsync(input, tuning, null, cancellationToken).ConfigureAwait(false);
+            var (result, error) = await TryScanWithRetriesAsync(run, tuning, cancellationToken).ConfigureAwait(false);
 
             if (result is not null)
             {
@@ -386,11 +386,42 @@ internal sealed partial class DvbChannelScanner : IChannelScanner, IDisposable
         return (null, null, failure);
     }
 
+    /// <summary>
+    /// Scans a transponder, again where it locked and yet gave nothing: right after a tune, a
+    /// Kathrein EXIP-418 now and then sends what it still had and then nothing for as long as one
+    /// waits, and a new session cures that. The last try does without the NIT's transport stream,
+    /// in case that is what is wrong. A transponder without a lock is not asked twice.
+    /// </summary>
+    private async Task<(MuxScanResult? Result, TunerTransportException? Error)> TryScanWithRetriesAsync(
+        ScanRun run,
+        TuningParameters tuning,
+        CancellationToken cancellationToken)
+    {
+        int? expected = run.ExpectedStreams.TryGetValue(tuning, out var stream) ? stream : null;
+        (MuxScanResult? Result, TunerTransportException? Error) outcome = default;
+
+        foreach (var attempt in new[] { expected, expected, null })
+        {
+            outcome = await TryScanAsync(run.Input, tuning, null, cancellationToken, attempt).ConfigureAwait(false);
+
+            if (outcome.Result is not null || outcome.Error?.Signal is { Locked: false })
+            {
+                break;
+            }
+
+            // It also shuts the door on sessions that follow each other too quickly.
+            await Task.Delay(_timings.Retry, cancellationToken).ConfigureAwait(false);
+        }
+
+        return outcome;
+    }
+
     private async Task<(MuxScanResult? Result, TunerTransportException? Error)> TryScanAsync(
         ScanInput input,
         TuningParameters tuning,
         TimeSpan? lockWindow,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? expectedTransportStream = null)
     {
         var transport = _transports.Create(input.Device, new TuneRequest(tuning, input.Source));
 
@@ -401,7 +432,8 @@ internal sealed partial class DvbChannelScanner : IChannelScanner, IDisposable
                 _timings,
                 readNetwork: input.Delivery != DeliverySystem.Terrestrial,
                 cancellationToken,
-                lockWindow).ConfigureAwait(false);
+                lockWindow,
+                expectedTransportStream).ConfigureAwait(false);
 
             return (result, null);
         }
@@ -491,6 +523,9 @@ internal sealed class ScanRun(ScanRequest request, IProgress<ScanProgress> progr
 
     public Dictionary<string, StoredChannel> Found { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The transport stream the NIT says each planned transponder carries.</summary>
+    public Dictionary<TuningParameters, int> ExpectedStreams { get; } = [];
+
     public Dictionary<(int Network, int TransportStream, int Service), int> LogicalChannels { get; } = [];
 
     public Dictionary<int, int> NetworkIds { get; } = [];
@@ -525,6 +560,7 @@ internal sealed class ScanRun(ScanRequest request, IProgress<ScanProgress> progr
                 && !Plan.Any(step => step.Any(known => known.IsSameTransponder(tuning))))
             {
                 Plan.Add([tuning]);
+                ExpectedStreams[tuning] = stream.TransportStreamId;
             }
         }
 
@@ -534,7 +570,11 @@ internal sealed class ScanRun(ScanRequest request, IProgress<ScanProgress> progr
         {
             if (ChannelFactory.FromService(Input, used, result, service, NetworkIds.GetValueOrDefault(result.TransportStreamId), null) is { } channel)
             {
-                Found[channel.Id] = channel;
+                // Never a good entry for a bare one: a channel known by name stays what it is.
+                if (service.Description is not null || !Found.ContainsKey(channel.Id))
+                {
+                    Found[channel.Id] = channel;
+                }
             }
         }
 
